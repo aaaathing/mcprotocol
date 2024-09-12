@@ -67,10 +67,6 @@ module.exports = {
       /minecraft-data\/data.js$/,
       path.resolve(__dirname, 'asyncdata.js')
     ),
-    new webpack.NormalModuleReplacementPlugin(
-      /minecraft-protocol\/src\/transforms\/framing.js$/,
-      path.resolve(__dirname, 'transforms_framing.js')
-    ),
 		new webpack.ProvidePlugin({
       process: 'process/browser',
     }),
