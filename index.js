@@ -17,6 +17,7 @@ const autoVersion = require('minecraft-protocol/src/client/autoVersion')
 const pluginChannels = require('minecraft-protocol/src/client/pluginChannels')
 const versionChecking = require('minecraft-protocol/src/client/versionChecking')
 const uuid = require('minecraft-protocol/src/datatypes/uuid')
+const states = require('minecraft-protocol/src/states')
 
 window.mcProtocol.createClient = createClient
 
@@ -66,6 +67,18 @@ function createClient (options) {
 				clientAuth: false,
 				clientAuthUsername: options.username,
       })
+			client.write('eagLoginStates_clientVersion_1_moreAuth', {
+        clientUsername: options.username,
+				clientRequestedServer: options.host,
+				clientAuthPassword:""
+      })
+			//client.write("eagLoginStates_profileData",{key:"skin_v1",value:"idk"})
+			//client.write("eagLoginStates_profileData",{key:"cape_v1",value:"idk"})
+			client.write("eagLoginStates_finish",{})
+			client.on("eagLoginStates_serverFinish", pkt => {
+				client.state = states.HANDSHAKE
+				next()
+			})
 		}
     function next () {
       const mcData = require('minecraft-data')(client.version)
