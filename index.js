@@ -3,6 +3,7 @@
 window.mcProtocol = {}
 process.versions = {node:"Infinity.Infinity.Infinity"}
 window.mcProtocol.ping = require("minecraft-protocol/src/ping.js")
+window.mcProtocol.conv = require("mineflayer/lib/conversions.js")
 
 //from minecraft-protocol/src/createClient.js
 let DefaultClientImpl = require("minecraft-protocol/src/client.js")
@@ -84,10 +85,10 @@ function createClient (options) {
 				client.emit('success', {uuid:theuuid, username:theusername}) //for login
 			})
 		}
-		client.registerChannel("EAG|UpdateCert-1.8", ['string', []], false)
+		/*client.registerChannel("EAG|UpdateCert-1.8", ['string', []], false)
 		client.on("EAG|UpdateCert-1.8", e => {
 			debugger
-		})
+		})*/
   })
 
   keepalive(client, options)

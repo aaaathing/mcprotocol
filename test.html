@@ -1,4 +1,4 @@
-<script src="dist/bundle.js"></script>
+<script src="dist/mcProtocol.js"></script>
 <script>
 	if(1)(async function(){
 		await mcProtocol.dataPrefetch("pc","1.8", console.log)
@@ -14,7 +14,7 @@
 		c.on("playerJoin", e => console.log("playerJoin",e))
 		c.on("playerChat", e => console.log(e.plainMessage))
 		c.on("systemChat", e => console.log(e.formattedMessage))
-		c.on("packet", p => console.log(p))
+		c.on("packet", (p,m) => console.log(p,m))
 
 		window.sendRawS = function(str){
 			let arr = new Uint8Array(atob(str).split("").map(r=>r.charCodeAt(0)))
