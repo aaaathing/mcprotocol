@@ -16,8 +16,13 @@
 		c.on("systemChat", e => console.log(e.formattedMessage))
 		c.on("packet", console.log)
 
-		window.sendRaw = function(str){
-			c.writeRaw(new Uint8Array(atob(str).split("").map(r=>r.charCodeAt(0))))
+		window.toRaw = function(){
+			console.log([...new Uint8Array(atob(prompt()).split("").map(r=>r.charCodeAt(0)))].join(","))
 		}
+		window.sendRawS = function(str){
+			let arr = new Uint8Array(atob(str).split("").map(r=>r.charCodeAt(0)))
+			c.writeRaw(arr)
+		}
+		c.writeRaw(new Uint8Array([1, 2, 0, 2, 0, 2, 0, 3, 0, 1, 0, 47, 12, 69, 97, 103, 108, 101, 114, 99, 114, 97, 102, 116, 88, 3, 117, 51, 53, 0, 10, 116, 104, 105, 110, 103, 109, 97, 107, 101, 114]))
 	})()
 </script>
