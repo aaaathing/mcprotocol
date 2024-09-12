@@ -67,7 +67,7 @@ window.mcProtocol.dataPrefetch = async function(pcOrBedrock, version, progCb){
 				[ "container", []]
 			],
 			"0x02": [
-				"eagLoginStates_opened_2_authAndSalt",
+				"eagLoginStates_opened_2_serverInfoAndAuth",
 				[ "container", [
 					{name:"clientProtocolVersionEag",type:"u16"},
 					{name:"clientProtocolVersion",type:"u16"},

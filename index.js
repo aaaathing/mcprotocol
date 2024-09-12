@@ -43,7 +43,7 @@ function createClient (options) {
   tcpDns(client, options)
 	{
   	client.username = options.username
-		client.uuid = uuid.nameToMcOfflineUUID(client.username)
+		//client.uuid = uuid.nameToMcOfflineUUID(client.username)
 		options.auth = 'offline'
 		options.connect(client)
 	}
@@ -51,12 +51,12 @@ function createClient (options) {
   
 	client.on('connect', function () {
     if (client.wait_connect) {
-      client.on('connect_allowed', nextEag)
+      client.on('connect_allowed', next1)
     } else {
-      nextEag()
+      next1()
     }
 
-		function nextEag(){
+		function next1(){
 			client.state = "eagLoginStates"
 			client.write('eagLoginStates_opened_0_authAndProto', {
         legacyProtocolVersion:2,
@@ -72,42 +72,22 @@ function createClient (options) {
 				clientRequestedServer: options.host,
 				clientAuthPassword:""
       })
+			let theuuid, theusername
+			client.on("eagLoginStates_login_2_clientId", pkt => {
+				theuuid = BigInt(pkt.clientUUIDPart1)<<96n | BigInt(pkt.clientUUIDPart2)<<64n | BigInt(pkt.clientUUIDPart3)<<32n | BigInt(pkt.clientUUIDPart4)
+				theusername = pkt.username
+			})
 			//client.write("eagLoginStates_profileData",{key:"skin_v1",value:"idk"})
 			//client.write("eagLoginStates_profileData",{key:"cape_v1",value:"idk"})
 			client.write("eagLoginStates_finish",{})
 			client.on("eagLoginStates_serverFinish", pkt => {
-				client.state = states.HANDSHAKE
-				next()
+				client.emit('success', {uuid:theuuid, username:theusername}) //for login
 			})
 		}
-    function next () {
-      const mcData = require('minecraft-data')(client.version)
-      let taggedHost = options.host
-      if (client.tagHost) taggedHost += client.tagHost
-      if (options.fakeHost) taggedHost = options.fakeHost
-
-      client.write('set_protocol', {
-        protocolVersion: options.protocolVersion,
-        serverHost: taggedHost,
-        serverPort: options.port,
-        nextState: 2
-      })
-      client.state = states.LOGIN
-      client.write('login_start', {
-        username: client.username,
-        signature: (client.profileKeys && !mcData.supportFeature('useChatSessions'))
-          ? {
-              timestamp: BigInt(client.profileKeys.expiresOn.getTime()), // should probably be called "expireTime"
-              // Remove padding on the public key: not needed in vanilla server but matches how vanilla client looks
-              publicKey: client.profileKeys.public.export({ type: 'spki', format: 'der' }),
-              signature: mcData.supportFeature('profileKeySignatureV2')
-                ? client.profileKeys.signatureV2
-                : client.profileKeys.signature
-            }
-          : null,
-        playerUUID: client.session?.selectedProfile?.id ?? client.uuid
-      })
-    }
+		client.registerChannel("EAG|UpdateCert-1.8", ['string', []], false)
+		client.on("EAG|UpdateCert-1.8", e => {
+			debugger
+		})
   })
 
   keepalive(client, options)
