@@ -34,9 +34,9 @@ window.mcProtocol.dataPrefetch = async function(pcOrBedrock, version, progCb){
 					"eagLoginStates_opened_0_authAndProto",
 					[ "container", [
 						{ "name": "legacyProtocolVersion", "type": "u8" },//2
-						{ "name": "clientProtovolVersionEag", "type": ["buffer", { "countType": "u16", "count":"u16" }] },// [2,3]
-						{ "name": "clientProtovolVersion", "type": ["buffer", { "countType": "u16", "count":"u16" }] },// [47]
-						{ "name": "clientName", "type": "blstring" },
+						{ "name": "clientProtovolVersionEag", "type": ["array", { "countType": "u16", type:"u16" }] },// [2,3]
+						{ "name": "clientProtovolVersion", "type": ["array", { "countType": "u16", type:"u16" }] },// [47]
+						{ "name": "clientBrand", "type": "blstring" },
 						{ "name": "clientVersion", "type": "blstring" },
 						{ "name": "clientAuth", "type": "bool" },
 						{ "name": "clientAuthUsername", "type": "blstring" },
@@ -85,7 +85,7 @@ function genTypes(before){
 	}
 	for(let i in before){
 		ret["packet_"+before[i][0]] = before[i][1]
-		name[i] = "packet_"+before[i][0]
+		name[i] = before[i][0]
 		params[before[i][0]] = "packet_"+before[i][0]
 	}
 	return ret

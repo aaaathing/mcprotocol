@@ -11,7 +11,6 @@ const assert = require('assert')
 const encrypt = require('minecraft-protocol/src/client/encrypt')
 const keepalive = require('minecraft-protocol/src/client/keepalive')
 const compress = require('minecraft-protocol/src/client/compress')
-const setProtocol = require('minecraft-protocol/src/client/setProtocol')
 const play = require('minecraft-protocol/src/client/play')
 const tcpDns = require('minecraft-protocol/src/client/tcp_dns')
 const autoVersion = require('minecraft-protocol/src/client/autoVersion')
@@ -25,8 +24,7 @@ function createClient (options) {
   assert.ok(options, 'options is required')
   assert.ok(options.username, 'username is required')
   if (!options.version && !options.realms) { options.version = false }
-  if (options.realms && options.auth !== 'microsoft') throw new Error('Currently Realms can only be joined with auth: "microsoft"')
-
+  
   // TODO: avoid setting default version if autoVersion is enabled
   const optVersion = options.version || require('minecraft-protocol/src/version').defaultVersion
   const mcData = require('minecraft-data')(optVersion)
@@ -49,7 +47,56 @@ function createClient (options) {
 		options.connect(client)
 	}
   if (options.version === false) autoVersion(client, options)
-  setProtocol(client, options)
+  
+	client.on('connect', function () {
+    if (client.wait_connect) {
+      client.on('connect_allowed', nextEag)
+    } else {
+      nextEag()
+    }
+
+		function nextEag(){
+			client.state = "eagLoginStates"
+			client.write('eagLoginStates_opened_0_authAndProto', {
+        legacyProtocolVersion:2,
+				clientProtovolVersionEag: [2,3],
+				clientProtovolVersion: [options.protocolVersion], //47
+				clientBrand: "EaglercraftX",
+				clientVersion: "u35",
+				clientAuth: false,
+				clientAuthUsername: options.username,
+      })
+		}
+    function next () {
+      const mcData = require('minecraft-data')(client.version)
+      let taggedHost = options.host
+      if (client.tagHost) taggedHost += client.tagHost
+      if (options.fakeHost) taggedHost = options.fakeHost
+
+      client.write('set_protocol', {
+        protocolVersion: options.protocolVersion,
+        serverHost: taggedHost,
+        serverPort: options.port,
+        nextState: 2
+      })
+      client.state = states.LOGIN
+      client.write('login_start', {
+        username: client.username,
+        signature: (client.profileKeys && !mcData.supportFeature('useChatSessions'))
+          ? {
+              timestamp: BigInt(client.profileKeys.expiresOn.getTime()), // should probably be called "expireTime"
+              // Remove padding on the public key: not needed in vanilla server but matches how vanilla client looks
+              publicKey: client.profileKeys.public.export({ type: 'spki', format: 'der' }),
+              signature: mcData.supportFeature('profileKeySignatureV2')
+                ? client.profileKeys.signatureV2
+                : client.profileKeys.signature
+            }
+          : null,
+        playerUUID: client.session?.selectedProfile?.id ?? client.uuid
+      })
+    }
+  })
+
   keepalive(client, options)
   encrypt(client, options)
   play(client, options)
