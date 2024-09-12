@@ -15,5 +15,9 @@
 		c.on("playerChat", e => console.log(e.plainMessage))
 		c.on("systemChat", e => console.log(e.formattedMessage))
 		c.on("packet", console.log)
+
+		window.sendRaw = function(str){
+			c.writeRaw(new Uint8Array(atob(str).split("").map(r=>r.charCodeAt(0))))
+		}
 	})()
 </script>

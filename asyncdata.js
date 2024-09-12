@@ -24,5 +24,41 @@ window.mcProtocol.dataPrefetch = async function(pcOrBedrock, version, progCb){
 		//delete o.protocol.handshaking.toServer.types.packet[1][0].type[1].mappings['0xfe']
 		//delete o.protocol.handshaking.toServer.types.packet[1][1].type[1].fields.legacy_server_list_ping
 	}*/
+	function genTypes(before){
+		let name, params
+		let ret = {
+			packet:[ "container",
+				[
+					{ "name": "name", "type": [
+						"mapper", {
+							"type": "varint", "mappings": (name={})
+						}
+					]},
+					{ "name": "params", "type": [
+						"switch", { "compareTo": "name", "fields": (params={})}
+					]}
+				]
+			]
+		}
+		for(let i in before){
+			ret["packet_"+before[i][0]] = before[i][1]
+			name[i] = "packet_"+before[i][0]
+			params[before[i][0]] = "packet_"+before[i][0]
+		}
+		return ret
+	}
+	o.protocol.stateClientVersion = {
+		toServer:{
+			types:genTypes({
+				"0x01": [
+					"client_version_01",
+					[ "container", [ {
+						"name": "time",
+						"type": "i64"
+					} ]]
+				]
+			})
+		}
+	}
 }
 module.exports = data
