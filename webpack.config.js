@@ -1,11 +1,11 @@
-// npx webpack --config Documents/mcprotocol/webpack.config.js
+// npx webpack --config nosyncfiles/mcprotocol/webpack.config.js
 
 const path = require('path');
 const webpack = require('webpack');
 
 module.exports = {
   //This property defines where the application starts
-  entry:'./Documents/mcprotocol/index.js',
+  entry:'./nosyncfiles/mcprotocol/index.js',
 
   //This property defines the file path and the file name which will be used for deploying the bundled file
   output:{
@@ -26,9 +26,12 @@ module.exports = {
 				resolve: {
 					fullySpecified: false
 				}
-			}
-    ]
+			},
+    ],
   },
+	optimization: {
+		minimize: false
+ 	},
 
 	resolve:{
 		alias:{
@@ -61,8 +64,12 @@ module.exports = {
   // Setup plugin to use a HTML file for serving bundled js files
   plugins: [
     new webpack.NormalModuleReplacementPlugin(
-      /minecraft-data\/data.js/,
+      /minecraft-data\/data.js$/,
       path.resolve(__dirname, 'asyncdata.js')
+    ),
+    new webpack.NormalModuleReplacementPlugin(
+      /minecraft-protocol\/src\/transforms\/framing.js$/,
+      path.resolve(__dirname, 'transforms_framing.js')
     ),
 		new webpack.ProvidePlugin({
       process: 'process/browser',

@@ -3,17 +3,17 @@
 	(async function(){
 		await mcProtocol.dataPrefetch("pc","1.8", console.log)
 		window.c = mcProtocol.createClient({
-			host:"web.aesthetiful.com",
+			host:"eagler.noBnoT.org",
 			port:"443",
 			username:"test9999",
 			version:"1.8",
-			auth: function (client, options){
-				
-			}
 		})
-		c.on("connect", e => console.log("connect",e))
+		c.on("connect", e => {console.log("connect",e)})
+		c.on("end", e => {console.log("close",e)})
+		c.on("error", console.error)
 		c.on("playerJoin", e => console.log("playerJoin",e))
 		c.on("playerChat", e => console.log(e.plainMessage))
 		c.on("systemChat", e => console.log(e.formattedMessage))
+		c.on("packet", console.log)
 	})()
 </script>

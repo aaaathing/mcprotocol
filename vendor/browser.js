@@ -319,7 +319,9 @@ Socket.prototype._handleWebsocket = function () {
 	this._ws.addEventListener('close', function () {
 		if (self.readyState == 'open') {
 			//console.log('TCP closed');
+			self.emit("end")
 			self.destroy();
+			self.emit("close")
 		}
 	});
 };
