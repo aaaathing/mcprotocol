@@ -40,24 +40,28 @@ function parseBitMap (bitMap) {
   return { chunkIncluded, chunkCount }
 }
 window.mcProtocol.load_1_8 = function (data, bitMap = 0xFFFF, skyLightSent = true, fullChunk = true, cb) {
+	const w=16, l=16, sh=16
+	const SECTION_SIZE = (w * l * sh) * (skyLightSent ? 3 : 5 / 2)
 	const { chunkIncluded, chunkCount } = parseBitMap(bitMap)
 	let offset = 0
-	let offsetLight = 16 * 16 * sectionCount * chunkCount * 2
-	let offsetSkyLight = (this.skyLightSent) ? 16 * 16 * sectionCount * chunkCount / 2 * 5 : 0
+	let offsetLight = w * l * sectionCount * chunkCount * 2
+	let offsetSkyLight = skyLightSent ? 16 * 16 * sectionCount * chunkCount / 2 * 5 : 0
 	for (let i = 0; i < sectionCount; i++) {
 		if (chunkIncluded[i]) {
-			cb(i, data.subarray(offset, offset + w * l * sh * 2), data.subarray(offsetLight, offsetLight + w * l * sh / 2), this.skyLightSent && data.subarray(offsetSkyLight, offsetSkyLight + w * l * sh / 2))
+			cb(i, data.subarray(offset, offset + w * l * sh * 2), data.subarray(offsetLight, offsetLight + w * l * sh / 2), skyLightSent && data.subarray(offsetSkyLight, offsetSkyLight + w * l * sh / 2))
 			offset += w * l * sh * 2
 			offsetLight += w * l * sh / 2
-			if (this.skyLightSent) offsetSkyLight += w * l * sh / 2
+			if (skyLightSent) offsetSkyLight += w * l * sh / 2
 		}
 	}
+	let o={}
 	if (fullChunk) {
-		data.copy(this.biome, 0, w * l * sectionCount * chunkCount * (skyLightSent ? 3 : 5 / 2))
+		o.biomes = data.subarray(w * l * sectionCount * chunkCount * (skyLightSent ? 3 : 5 / 2))
 	}
 
 	const expectedSize = SECTION_SIZE * chunkCount + (fullChunk ? w * l : 0)
 	if (data.length !== expectedSize) { throw (new Error(`Data buffer not correct size (was ${data.length}, expected ${expectedSize})`)) }
+	return o
 }
 window.mcProtocol.onesInShort = function (n) {
   n = n & 0xffff

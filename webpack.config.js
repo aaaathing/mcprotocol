@@ -10,7 +10,7 @@ module.exports = {
   //This property defines the file path and the file name which will be used for deploying the bundled file
   output:{
     path: path.join(__dirname, '/dist'),
-    filename: 'mcProtocol.js'
+    filename: 'bundle.js'
   },
 
 	performance: {
@@ -30,7 +30,7 @@ module.exports = {
     ],
   },
 	optimization: {
-		minimize: false
+		//minimize: false
  	},
 
 	resolve:{
