@@ -48,7 +48,7 @@ window.mcProtocol.load_1_8 = function (data, bitMap = 0xFFFF, skyLightSent = tru
 	let offsetSkyLight = skyLightSent ? 16 * 16 * sectionCount * chunkCount / 2 * 5 : 0
 	for (let i = 0; i < sectionCount; i++) {
 		if (chunkIncluded[i]) {
-			cb(i, data.subarray(offset, offset + w * l * sh * 2), data.subarray(offsetLight, offsetLight + w * l * sh / 2), skyLightSent && data.subarray(offsetSkyLight, offsetSkyLight + w * l * sh / 2))
+			cb(i, new Uint16Array(Uint8Array.prototype.slice.apply(data, [offset, offset + w * l * sh * 2]).buffer), data.subarray(offsetLight, offsetLight + w * l * sh / 2), skyLightSent && data.subarray(offsetSkyLight, offsetSkyLight + w * l * sh / 2))
 			offset += w * l * sh * 2
 			offsetLight += w * l * sh / 2
 			if (skyLightSent) offsetSkyLight += w * l * sh / 2
