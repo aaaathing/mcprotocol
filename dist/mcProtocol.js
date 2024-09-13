@@ -54345,7 +54345,7 @@ const dataVersion = (__webpack_require__(4816)/* .version */ .rE)
 let data = window.mcProtocol.data = {}
 let paths
 window.mcProtocol.dataPrefetch = async function(pcOrBedrock, version, progCb){
-	if(!paths) paths = await (await fetch("https://unpkg.com/minecraft-data@"+dataVersion+"/minecraft-data/data/dataPaths.json")).json()
+	if(!paths) paths = __webpack_require__(9424) //await (await fetch("https://unpkg.com/minecraft-data@"+dataVersion+"/minecraft-data/data/dataPaths.json")).json()
 	if(!data[pcOrBedrock]) data[pcOrBedrock] = {}
 	let o = data[pcOrBedrock][version/*.replace("_eag", "")*/] = {}
 	let thesePaths = paths[pcOrBedrock][version/*.replace("_eag", "")*/]
@@ -73197,6 +73197,585 @@ module.exports = [
 
 /***/ }),
 
+/***/ 740:
+/***/ ((module, __unused_webpack_exports, __webpack_require__) => {
+
+module.exports = loader
+
+const emptyBiome = {
+  color: 0,
+  height: null,
+  name: '',
+  rainfall: 0,
+  temperature: 0
+}
+
+function loader (registryOrVersion) {
+  const registry = typeof registryOrVersion === 'string' ? __webpack_require__(5691)(registryOrVersion) : registryOrVersion
+  const biomes = registry.biomes
+  return function Biome (id) {
+    return biomes?.[id] || { ...emptyBiome, id }
+  }
+}
+
+
+/***/ }),
+
+/***/ 4495:
+/***/ ((module, __unused_webpack_exports, __webpack_require__) => {
+
+const nbt = __webpack_require__(3624)
+
+module.exports = registry => {
+  if (registry.version.type === 'pc') {
+    const ChatMessage = __webpack_require__(2794)(registry.version.majorVersion)
+
+    function signValueToJSONArray (text) {
+      const texts = []
+      if (typeof text === 'string') {
+        // Sign line should look like JSON string of `{"text: "actualText"}`. Since we have plaintext, need to add in this JSON wrapper.
+        texts.push(...text.split('\n').map((t) => (JSON.stringify({ text: t }))))
+      } else if (Array.isArray(text)) {
+        for (const t of text) {
+          if (t.toJSON) { // prismarine-chat
+            texts.push(JSON.stringify(t.toJSON()))
+          } else if (typeof t === 'object') { // normal JS object
+            texts.push(JSON.stringify(t))
+          } else { // plaintext
+            texts.push(JSON.stringify({ text: t }))
+          }
+        }
+      }
+      return texts
+    }
+
+    function mergeNbt (obj1, obj2) {
+      for (const [key, value] of Object.entries(obj2)) {
+        if (!(key in obj1)) {
+          obj1[key] = value
+          continue
+        }
+
+        if (typeof value === 'object' && !Array.isArray(value)) mergeNbt(obj1[key], obj2[key])
+      }
+    }
+
+    function setSignTextForMultiSideSign (block, side, text) {
+      const texts = signValueToJSONArray(text)
+
+      if (!block.entity) {
+        block.entity = nbt.comp({
+          id: nbt.string(registry.version['>=']('1.11') ? 'minecraft:sign' : 'Sign')
+        })
+      }
+
+      mergeNbt(block.entity, nbt.comp({
+        isWaxed: nbt.byte(0),
+        back_text: nbt.comp({
+          has_glowing_text: nbt.byte(0),
+          color: nbt.string('black'),
+          messages: nbt.list(nbt.string(['{"text":""}']))
+        }),
+        front_text: nbt.comp({
+          has_glowing_text: nbt.byte(0),
+          color: nbt.string('black'),
+          messages: nbt.list(nbt.string(['{"text":""}']))
+        })
+      }))
+
+      block.entity.value[side].value.messages.value.value = texts
+    }
+
+    function getSignTextForMultiSideSign (block, side) {
+      if (!block.entity) return ''
+      return block.entity?.value?.[side]?.value?.messages?.value?.value?.map(text => typeof JSON.parse(text) === 'string' ? JSON.parse(text) : new ChatMessage(JSON.parse(text)).toString()).join('\n') ?? ''
+    }
+
+    function setSignTextForLegacySign (block, text) {
+      const texts = signValueToJSONArray(text)
+
+      if (!block.entity) {
+        block.entity = nbt.comp({
+          id: nbt.string(registry.version['>=']('1.11') ? 'minecraft:sign' : 'Sign')
+        })
+      }
+
+      Object.assign(block.entity.value, {
+        Text1: nbt.string(texts[0] || '""'),
+        Text2: nbt.string(texts[1] || '""'),
+        Text3: nbt.string(texts[2] || '""'),
+        Text4: nbt.string(texts[3] || '""')
+      })
+    }
+
+    function getSignTextForLegacySign (block) {
+      if (!block.entity) return ''
+      const texts = [block.entity.value.Text1.value, block.entity.value.Text2.value, block.entity.value.Text3.value, block.entity.value.Text4.value].map(val => val || '"')
+      return texts.map(text => typeof JSON.parse(text) === 'string' ? JSON.parse(text) : new ChatMessage(JSON.parse(text)).toString()).join('\n').trimEnd()
+    }
+
+    return {
+      sign: {
+        setSignText (front, back) {
+          if (registry.supportFeature('multiSidedSigns')) {
+            if (front !== undefined) setSignTextForMultiSideSign(this, 'front_text', front)
+            if (back !== undefined) setSignTextForMultiSideSign(this, 'back_text', back)
+          } else {
+            if (front !== undefined) setSignTextForLegacySign(this, front)
+            if (back !== undefined) throw new Error(`Cannot set the back text of a sign on a version before 1.20 : ${registry.version.minecraftVersion}`)
+          }
+        },
+
+        getSignText () {
+          if (registry.supportFeature('multiSidedSigns')) {
+            return [getSignTextForMultiSideSign(this, 'front_text'), getSignTextForMultiSideSign(this, 'back_text')]
+          } else {
+            return [getSignTextForLegacySign(this)]
+          }
+        },
+
+        // Deprecated APIs kept for backwards compatibility
+        get signText () {
+          return this.getSignText()[0]
+        },
+        set signText (text) {
+          this.setSignText(text)
+        }
+      }
+    }
+  }
+
+  if (registry.version.type === 'bedrock') {
+    return {
+      sign: {
+        getSignText () {
+          if (!this.entity) return ['']
+          return [this.entity.Text.value]
+        },
+        setSignText (text) {
+          if (!this.entity) {
+            this.entity = nbt.comp({
+              id: nbt.string('Sign')
+            })
+          }
+
+          Object.assign(this.entity.value, {
+            Text: nbt.string(Array.isArray(text) ? text.join('\n') : text)
+          })
+        },
+
+        // Deprecated APIs kept for backwards compatibility
+        get signText () {
+          return this.getSignText()[0]
+        },
+        set signText (text) {
+          this.setSignText(text)
+        }
+      }
+    }
+  }
+}
+
+
+/***/ }),
+
+/***/ 457:
+/***/ ((module, __unused_webpack_exports, __webpack_require__) => {
+
+module.exports = loader
+module.exports.testedVersions = ['1.8.8', '1.9.4', '1.10.2', '1.11.2', '1.12.2', '1.13.2', '1.14.4', '1.15.2', '1.16.4', '1.17.1', '1.18.1', 'bedrock_1.17.10', 'bedrock_1.18.0', '1.20']
+
+const nbt = __webpack_require__(3624)
+const mcData = __webpack_require__(915)
+const legacyPcBlocksByName = Object.entries(mcData.legacy.pc.blocks).reduce((obj, [idmeta, name]) => {
+  const n = name.replace('minecraft:', '').split('[')[0]
+  const s = name.split('[')[1]?.replace(']', '') ?? ''
+  ;(obj[n] = obj[n] || {})[s] = idmeta
+  return obj // array of { [name]: { [states string]: string(id:meta) } }
+}, {})
+const legacyPcBlocksByIdmeta = Object.entries(mcData.legacy.pc.blocks).reduce((obj, [idmeta, name]) => {
+  const s = name.split('[')[1]?.replace(']', '')
+  obj[idmeta] = s
+    ? Object.fromEntries(s.split(',').map(s => {
+      let [k, v] = s.split('=')
+      if (!isNaN(parseInt(v))) v = parseInt(v)
+      return [k, v]
+    }))
+    : {}
+  return obj // array of { '255:0': { mode: 'save' }, }
+}, {})
+
+function loader (registryOrVersion) {
+  const registry = typeof registryOrVersion === 'string' ? __webpack_require__(5691)(registryOrVersion) : registryOrVersion
+  const version = registry.version
+  return provider(registry, { Biome: __webpack_require__(740)(version), version })
+}
+
+function provider (registry, { Biome, version }) {
+  const blockMethods = __webpack_require__(4495)(registry)
+  const usesBlockStates = (version.type === 'pc' && registry.supportFeature('blockStateId')) || (version.type === 'bedrock')
+  const shapes = registry.blockCollisionShapes
+  if (shapes) {
+    // Prepare block shapes
+    for (const id in registry.blocks) {
+      const block = registry.blocks[id]
+      const shapesId = shapes.blocks[block.name]
+      block.shapes = (shapesId instanceof Array) ? shapes.shapes[shapesId[0]] : shapes.shapes[shapesId]
+      if (block.states || version.type === 'bedrock') { // post 1.13
+        if (shapesId instanceof Array) {
+          block.stateShapes = []
+          for (const i in shapesId) {
+            block.stateShapes.push(shapes.shapes[shapesId[i]])
+          }
+        }
+      } else { // pre 1.13
+        if ('variations' in block) {
+          for (const i in block.variations) {
+            const metadata = block.variations[i].metadata
+            if (shapesId instanceof Array) {
+              block.variations[i].shapes = shapes.shapes[shapesId[metadata]]
+            } else {
+              block.variations[i].shapes = shapes.shapes[shapesId]
+            }
+          }
+        }
+      }
+
+      if (!block.shapes && version.type === 'bedrock') {
+        // if no shapes are present for this block (for example, some chemistry stuff we don't have BBs for), assume it's stone
+        block.shapes = shapes.shapes[shapes.blocks.stone[0]]
+        block.stateShapes = block.shapes
+      }
+    }
+  }
+
+  function getEffectLevel (effectName, effects) {
+    const effectDescriptor = registry.effectsByName[effectName]
+    if (!effectDescriptor) {
+      return 0
+    }
+    const effectInfo = effects[effectDescriptor.id]
+    if (!effectInfo) {
+      return 0
+    }
+    return effectInfo.amplifier + 1
+  }
+
+  function getEnchantmentLevel (enchantmentName, enchantments) {
+    const enchantmentDescriptor = registry.enchantmentsByName[enchantmentName]
+    if (!enchantmentDescriptor) {
+      return 0
+    }
+
+    for (const enchInfo of enchantments) {
+      if (typeof enchInfo.name === 'string') {
+        if (enchInfo.name.includes(enchantmentName)) {
+          return enchInfo.lvl
+        }
+      } else if (enchInfo.name === enchantmentDescriptor.name) {
+        return enchInfo.lvl
+      }
+    }
+    return 0
+  }
+
+  function getMiningFatigueMultiplier (effectLevel) {
+    switch (effectLevel) {
+      case 0: return 1.0
+      case 1: return 0.3
+      case 2: return 0.09
+      case 3: return 0.0027
+      default: return 8.1E-4
+    }
+  }
+
+  return class Block {
+    constructor (type, biomeId, metadata, stateId) {
+      this.type = type
+      this.metadata = metadata ?? 0
+      this.light = 0
+      this.skyLight = 0
+      this.biome = new Biome(biomeId)
+      this.position = null
+      this.stateId = stateId
+      this.computedStates = {}
+
+      if (stateId === undefined && type !== undefined) {
+        const b = registry.blocks[type]
+        // Make sure the block is actually valid and metadata is within valid bounds
+        this.stateId = b === undefined ? null : Math.min(b.minStateId + metadata, b.maxStateId)
+      }
+
+      const blockEnum = registry.blocksByStateId[this.stateId]
+      if (blockEnum) {
+        this.metadata = this.stateId - blockEnum.minStateId
+        this.type = blockEnum.id
+        this.name = blockEnum.name
+        this.hardness = blockEnum.hardness
+        this.displayName = blockEnum.displayName
+        this.shapes = blockEnum.shapes
+        if (blockEnum.stateShapes) {
+          if (blockEnum.stateShapes[this.metadata] !== undefined) {
+            this.shapes = blockEnum.stateShapes[this.metadata]
+          } else {
+            // Default to shape 0
+            this.shapes = blockEnum.stateShapes[0]
+            this.missingStateShape = true
+          }
+        } else if (blockEnum.variations) {
+          const variations = blockEnum.variations
+          for (const i in variations) {
+            if (variations[i].metadata === metadata) {
+              this.displayName = variations[i].displayName
+              this.shapes = variations[i].shapes
+            }
+          }
+        }
+        this.boundingBox = blockEnum.boundingBox
+        this.transparent = blockEnum.transparent
+        this.diggable = blockEnum.diggable
+        this.material = blockEnum.material
+        this.harvestTools = blockEnum.harvestTools
+        this.drops = blockEnum.drops
+      } else {
+        this.name = ''
+        this.displayName = ''
+        this.shapes = []
+        this.hardness = 0
+        this.boundingBox = 'empty'
+        this.transparent = true
+        this.diggable = false
+      }
+
+      this._properties = {}
+      if (version.type === 'pc') {
+        if (usesBlockStates) {
+          const blockEnum = registry.blocksByStateId[this.stateId]
+          if (blockEnum && blockEnum.states) {
+            let data = this.metadata
+            for (let i = blockEnum.states.length - 1; i >= 0; i--) {
+              const prop = blockEnum.states[i]
+              this._properties[prop.name] = propValue(prop, data % prop.num_values)
+              data = Math.floor(data / prop.num_values)
+            }
+          }
+        } else {
+          this._properties = legacyPcBlocksByIdmeta[this.type + ':' + this.metadata] || legacyPcBlocksByIdmeta[this.type + ':0']
+          if (!this._properties) { // If no props, try different metadata for type match only
+            for (let i = 0; i < 15; i++) {
+              this._properties = legacyPcBlocksByIdmeta[this.type + ':' + i]
+              if (this._properties) break
+            }
+          }
+        }
+      } else if (version.type === 'bedrock') {
+        const states = registry.blockStates?.[this.stateId]?.states || {}
+        for (const state in states) {
+          this._properties[state] = states[state].value
+        }
+      }
+
+      // This can be expanded to other non-sign related things
+      if (this.name.includes('sign')) {
+        mergeObject(this, blockMethods.sign)
+      }
+    }
+
+    static fromStateId (stateId, biomeId) {
+      // 1.13+: metadata is completely removed and only block state IDs are used
+      if (usesBlockStates) {
+        return new Block(undefined, biomeId, 0, stateId)
+      } else {
+        return new Block(stateId >> 4, biomeId, stateId & 15, stateId)
+      }
+    }
+
+    static fromProperties (typeId, properties, biomeId) {
+      const block = typeof typeId === 'string' ? registry.blocksByName[typeId] : registry.blocks[typeId]
+
+      if (version.type === 'pc') {
+        if (block.states) {
+          let data = 0
+          for (const [key, value] of Object.entries(properties)) {
+            data += getStateValue(block.states, key, value)
+          }
+          return new Block(undefined, biomeId, 0, block.minStateId + data)
+        } else {
+          const states = legacyPcBlocksByName[block.name]
+          for (const state in states) {
+            let broke
+            for (const [key, value] of Object.entries(properties)) {
+              const s = key + '=' + value
+              if (!state.includes(s)) {
+                broke = true
+                break
+              }
+            }
+            if (!broke) {
+              const [id, meta] = states[state].split(':').map(Number)
+              return new Block(id, biomeId, meta)
+            }
+          }
+          throw new Error('No matching block state found for ' + block.name + ' with properties ' + JSON.stringify(properties)) // This should not happen
+        }
+      } else if (version.type === 'bedrock') {
+        for (let stateId = block.minStateId; stateId <= block.maxStateId; stateId++) {
+          const state = registry.blockStates[stateId].states
+          if (Object.entries(properties).find(([prop, val]) => state[prop]?.value !== val)) continue
+          return new Block(undefined, biomeId, 0, stateId)
+        }
+        return block
+      }
+    }
+
+    static fromString (str, biomeId) {
+      if (str.startsWith('minecraft:')) str = str.substring(10)
+      const name = str.split('[', 1)[0]
+      const propertiesStr = str.slice(name.length + 1, -1).split(',')
+      if (version.type === 'pc') {
+        return Block.fromProperties(name, Object.fromEntries(propertiesStr.map(property => property.split('='))), biomeId)
+      } else if (version.type === 'bedrock') {
+        return Block.fromProperties(name, Object.fromEntries(propertiesStr.map(property => {
+          const [key, value] = property.split(':')
+          return [key.slice(1, -1), value.startsWith('"') ? value.slice(1, -1) : { true: 1, false: 0 }[value] ?? parseInt(value)]
+        })), biomeId)
+      }
+    }
+
+    get blockEntity () {
+      return this.entity ? nbt.simplify(this.entity) : undefined
+    }
+
+    getProperties () {
+      return Object.assign(this._properties, this.computedStates)
+    }
+
+    canHarvest (heldItemType) {
+      if (!this.harvestTools) { return true }; // for blocks harvestable by hand
+      return heldItemType && this.harvestTools && this.harvestTools[heldItemType]
+    }
+
+    // http://minecraft.gamepedia.com/Breaking#Calculation
+    // for more concrete information, look up following Minecraft methods (assuming yarn mappings):
+    // AbstractBlock#calcBlockBreakingDelta, PlayerEntity#getBlockBreakingSpeed, PlayerEntity#canHarvest
+    digTime (heldItemType, creative, inWater, notOnGround, enchantments = [], effects = {}) {
+      if (creative) return 0
+
+      const materialToolMultipliers = registry.materials[this.material]
+      const isBestTool = heldItemType && materialToolMultipliers && materialToolMultipliers[heldItemType]
+
+      // Compute breaking speed multiplier
+      let blockBreakingSpeed = 1
+
+      if (isBestTool) {
+        blockBreakingSpeed = materialToolMultipliers[heldItemType]
+      }
+
+      // Efficiency is applied if tools speed multiplier is more than 1.0
+      const efficiencyLevel = getEnchantmentLevel('efficiency', enchantments)
+      if (efficiencyLevel > 0 && blockBreakingSpeed > 1.0) {
+        blockBreakingSpeed += efficiencyLevel * efficiencyLevel + 1
+      }
+
+      // Haste is always considered when effect is present, and when both
+      // Conduit Power and Haste are present, highest level is considered
+      const hasteLevel = Math.max(
+        getEffectLevel('Haste', effects),
+        getEffectLevel('ConduitPower', effects))
+
+      if (hasteLevel > 0) {
+        blockBreakingSpeed *= 1 + (0.2 * hasteLevel)
+      }
+
+      // Mining fatigue is applied afterwards, but multiplier only decreases up to level 4
+      const miningFatigueLevel = getEffectLevel('MiningFatigue', effects)
+
+      if (miningFatigueLevel > 0) {
+        blockBreakingSpeed *= getMiningFatigueMultiplier(miningFatigueLevel)
+      }
+
+      // Apply 5x breaking speed de-buff if we are submerged in water and do not have aqua affinity
+      const aquaAffinityLevel = getEnchantmentLevel('aqua_affinity', enchantments)
+
+      if (inWater && aquaAffinityLevel === 0) {
+        blockBreakingSpeed /= 5.0
+      }
+
+      // We always get 5x breaking speed de-buff if we are not on the ground
+      if (notOnGround) {
+        blockBreakingSpeed /= 5.0
+      }
+
+      // Compute block breaking delta (breaking progress applied in a single tick)
+      const blockHardness = this.hardness
+      const matchingToolMultiplier = this.canHarvest(heldItemType) ? 30.0 : 100.0
+
+      let blockBreakingDelta = blockBreakingSpeed / blockHardness / matchingToolMultiplier
+
+      // Delta will always be zero if block has -1.0 durability
+      if (blockHardness === -1.0) {
+        blockBreakingDelta = 0.0
+      }
+
+      // We will never be capable of breaking block if delta is zero, so abort now and return infinity
+      if (blockBreakingDelta === 0.0) {
+        return Infinity
+      }
+
+      // If breaking delta is more than 1.0 per tick, the block is broken instantly, so return 0
+      if (blockBreakingDelta >= 1.0) {
+        return 0
+      }
+
+      // Determine how many ticks breaking will take, then convert to millis and return result
+      // We round ticks up because if progress is below 1.0, it will be finished next tick
+
+      const ticksToBreakBlock = Math.ceil(1.0 / blockBreakingDelta)
+      return ticksToBreakBlock * 50
+    }
+  }
+
+  function parseValue (value, state) {
+    if (state.type === 'enum') {
+      return state.values.indexOf(value)
+    }
+    if (state.type === 'bool') {
+      if (value === true) return 0
+      if (value === false) return 1
+    }
+    if (state.type === 'int') {
+      return value
+    }
+    // Assume by-name mapping for unknown properties
+    return state.values?.indexOf(value.toString()) ?? 0
+  }
+
+  function getStateValue (states, name, value) {
+    let offset = 1
+    for (let i = states.length - 1; i >= 0; i--) {
+      const state = states[i]
+      if (state.name === name) {
+        return offset * parseValue(value, state)
+      }
+      offset *= state.num_values
+    }
+    return 0
+  }
+
+  function propValue (state, value) {
+    if (state.type === 'enum') return state.values[value]
+    if (state.type === 'bool') return !value
+    return value
+  }
+}
+
+function mergeObject (to, from) {
+  Object.defineProperties(to, Object.getOwnPropertyDescriptors(from))
+}
+
+
+/***/ }),
+
 /***/ 4942:
 /***/ ((module, __unused_webpack_exports, __webpack_require__) => {
 
@@ -74624,6 +75203,1024 @@ module.exports = {
     zigzag64: [readSignedVarLong, writeSignedVarLong, sizeOfVarLong],
     zigzag32: [readSignedVarInt, writeSignedVarInt, sizeOfVarInt]
   }
+}
+
+
+/***/ }),
+
+/***/ 8745:
+/***/ ((module, __unused_webpack_exports, __webpack_require__) => {
+
+const Vec3 = (__webpack_require__(742).Vec3)
+const AABB = __webpack_require__(7259)
+const math = __webpack_require__(5607)
+const features = __webpack_require__(7873)
+const attribute = __webpack_require__(7689)
+
+function makeSupportFeature (mcData) {
+  return feature => features.some(({ name, versions }) => name === feature && versions.includes(mcData.version.majorVersion))
+}
+
+function Physics (mcData, world) {
+  const supportFeature = makeSupportFeature(mcData)
+  const blocksByName = mcData.blocksByName
+
+  // Block Slipperiness
+  // https://www.mcpk.wiki/w/index.php?title=Slipperiness
+  const blockSlipperiness = {}
+  const slimeBlockId = blocksByName.slime_block ? blocksByName.slime_block.id : blocksByName.slime.id
+  blockSlipperiness[slimeBlockId] = 0.8
+  blockSlipperiness[blocksByName.ice.id] = 0.98
+  blockSlipperiness[blocksByName.packed_ice.id] = 0.98
+  if (blocksByName.frosted_ice) { // 1.9+
+    blockSlipperiness[blocksByName.frosted_ice.id] = 0.98
+  }
+  if (blocksByName.blue_ice) { // 1.13+
+    blockSlipperiness[blocksByName.blue_ice.id] = 0.989
+  }
+
+  // Block ids
+  const soulsandId = blocksByName.soul_sand.id
+  const honeyblockId = blocksByName.honey_block ? blocksByName.honey_block.id : -1 // 1.15+
+  const webId = blocksByName.cobweb ? blocksByName.cobweb.id : blocksByName.web.id
+  const waterIds = [blocksByName.water.id, blocksByName.flowing_water ? blocksByName.flowing_water.id : -1]
+  const lavaIds = [blocksByName.lava.id, blocksByName.flowing_lava ? blocksByName.flowing_lava.id : -1]
+  const ladderId = blocksByName.ladder.id
+  const vineId = blocksByName.vine.id
+  const waterLike = new Set()
+  if (blocksByName.seagrass) waterLike.add(blocksByName.seagrass.id) // 1.13+
+  if (blocksByName.tall_seagrass) waterLike.add(blocksByName.tall_seagrass.id) // 1.13+
+  if (blocksByName.kelp) waterLike.add(blocksByName.kelp.id) // 1.13+
+  if (blocksByName.kelp_plant) waterLike.add(blocksByName.kelp_plant.id) // 1.13+
+  const bubblecolumnId = blocksByName.bubble_column ? blocksByName.bubble_column.id : -1 // 1.13+
+  if (blocksByName.bubble_column) waterLike.add(bubblecolumnId)
+
+  const physics = {
+    gravity: 0.08, // blocks/tick^2 https://minecraft.gamepedia.com/Entity#Motion_of_entities
+    airdrag: Math.fround(1 - 0.02), // actually (1 - drag)
+    yawSpeed: 3.0,
+    pitchSpeed: 3.0,
+    playerSpeed: 0.1,
+    sprintSpeed: 0.3,
+    sneakSpeed: 0.3,
+    stepHeight: 0.6, // how much height can the bot step on without jump
+    negligeableVelocity: 0.003, // actually 0.005 for 1.8, but seems fine
+    soulsandSpeed: 0.4,
+    honeyblockSpeed: 0.4,
+    honeyblockJumpSpeed: 0.4,
+    ladderMaxSpeed: 0.15,
+    ladderClimbSpeed: 0.2,
+    playerHalfWidth: 0.3,
+    playerHeight: 1.8,
+    waterInertia: 0.8,
+    lavaInertia: 0.5,
+    liquidAcceleration: 0.02,
+    airborneInertia: 0.91,
+    airborneAcceleration: 0.02,
+    defaultSlipperiness: 0.6,
+    outOfLiquidImpulse: 0.3,
+    autojumpCooldown: 10, // ticks (0.5s)
+    bubbleColumnSurfaceDrag: {
+      down: 0.03,
+      maxDown: -0.9,
+      up: 0.1,
+      maxUp: 1.8
+    },
+    bubbleColumnDrag: {
+      down: 0.03,
+      maxDown: -0.3,
+      up: 0.06,
+      maxUp: 0.7
+    },
+    slowFalling: 0.125,
+    movementSpeedAttribute: mcData.attributesByName.movementSpeed.resource,
+    sprintingUUID: '662a6b8d-da3e-4c1c-8813-96ea6097278d' // SPEED_MODIFIER_SPRINTING_UUID is from LivingEntity.java
+  }
+
+  if (supportFeature('independentLiquidGravity')) {
+    physics.waterGravity = 0.02
+    physics.lavaGravity = 0.02
+  } else if (supportFeature('proportionalLiquidGravity')) {
+    physics.waterGravity = physics.gravity / 16
+    physics.lavaGravity = physics.gravity / 4
+  } else {
+    throw new Error('No liquid gravity settings, have you made sure the liquid gravity features are up to date?')
+  }
+
+  function getPlayerBB (pos) {
+    const w = physics.playerHalfWidth
+    return new AABB(-w, 0, -w, w, physics.playerHeight, w).offset(pos.x, pos.y, pos.z)
+  }
+
+  function setPositionToBB (bb, pos) {
+    pos.x = bb.minX + physics.playerHalfWidth
+    pos.y = bb.minY
+    pos.z = bb.minZ + physics.playerHalfWidth
+  }
+
+  function getSurroundingBBs (world, queryBB) {
+    const surroundingBBs = []
+    const cursor = new Vec3(0, 0, 0)
+    for (cursor.y = Math.floor(queryBB.minY) - 1; cursor.y <= Math.floor(queryBB.maxY); cursor.y++) {
+      for (cursor.z = Math.floor(queryBB.minZ); cursor.z <= Math.floor(queryBB.maxZ); cursor.z++) {
+        for (cursor.x = Math.floor(queryBB.minX); cursor.x <= Math.floor(queryBB.maxX); cursor.x++) {
+          const block = world.getBlock(cursor)
+          if (block) {
+            const blockPos = block.position
+            for (const shape of block.shapes) {
+              const blockBB = new AABB(shape[0], shape[1], shape[2], shape[3], shape[4], shape[5])
+              blockBB.offset(blockPos.x, blockPos.y, blockPos.z)
+              surroundingBBs.push(blockBB)
+            }
+          }
+        }
+      }
+    }
+    return surroundingBBs
+  }
+
+  physics.adjustPositionHeight = (pos) => {
+    const playerBB = getPlayerBB(pos)
+    const queryBB = playerBB.clone().extend(0, -1, 0)
+    const surroundingBBs = getSurroundingBBs(world, queryBB)
+
+    let dy = -1
+    for (const blockBB of surroundingBBs) {
+      dy = blockBB.computeOffsetY(playerBB, dy)
+    }
+    pos.y += dy
+  }
+
+  function moveEntity (entity, world, dx, dy, dz) {
+    const vel = entity.vel
+    const pos = entity.pos
+
+    if (entity.isInWeb) {
+      dx *= 0.25
+      dy *= 0.05
+      dz *= 0.25
+      vel.x = 0
+      vel.y = 0
+      vel.z = 0
+      entity.isInWeb = false
+    }
+
+    let oldVelX = dx
+    const oldVelY = dy
+    let oldVelZ = dz
+
+    if (entity.control.sneak && entity.onGround) {
+      const step = 0.05
+
+      // In the 3 loops bellow, y offset should be -1, but that doesnt reproduce vanilla behavior.
+      for (; dx !== 0 && getSurroundingBBs(world, getPlayerBB(pos).offset(dx, 0, 0)).length === 0; oldVelX = dx) {
+        if (dx < step && dx >= -step) dx = 0
+        else if (dx > 0) dx -= step
+        else dx += step
+      }
+
+      for (; dz !== 0 && getSurroundingBBs(world, getPlayerBB(pos).offset(0, 0, dz)).length === 0; oldVelZ = dz) {
+        if (dz < step && dz >= -step) dz = 0
+        else if (dz > 0) dz -= step
+        else dz += step
+      }
+
+      while (dx !== 0 && dz !== 0 && getSurroundingBBs(world, getPlayerBB(pos).offset(dx, 0, dz)).length === 0) {
+        if (dx < step && dx >= -step) dx = 0
+        else if (dx > 0) dx -= step
+        else dx += step
+
+        if (dz < step && dz >= -step) dz = 0
+        else if (dz > 0) dz -= step
+        else dz += step
+
+        oldVelX = dx
+        oldVelZ = dz
+      }
+    }
+
+    let playerBB = getPlayerBB(pos)
+    const queryBB = playerBB.clone().extend(dx, dy, dz)
+    const surroundingBBs = getSurroundingBBs(world, queryBB)
+    const oldBB = playerBB.clone()
+
+    for (const blockBB of surroundingBBs) {
+      dy = blockBB.computeOffsetY(playerBB, dy)
+    }
+    playerBB.offset(0, dy, 0)
+
+    for (const blockBB of surroundingBBs) {
+      dx = blockBB.computeOffsetX(playerBB, dx)
+    }
+    playerBB.offset(dx, 0, 0)
+
+    for (const blockBB of surroundingBBs) {
+      dz = blockBB.computeOffsetZ(playerBB, dz)
+    }
+    playerBB.offset(0, 0, dz)
+
+    // Step on block if height < stepHeight
+    if (physics.stepHeight > 0 &&
+      (entity.onGround || (dy !== oldVelY && oldVelY < 0)) &&
+      (dx !== oldVelX || dz !== oldVelZ)) {
+      const oldVelXCol = dx
+      const oldVelYCol = dy
+      const oldVelZCol = dz
+      const oldBBCol = playerBB.clone()
+
+      dy = physics.stepHeight
+      const queryBB = oldBB.clone().extend(oldVelX, dy, oldVelZ)
+      const surroundingBBs = getSurroundingBBs(world, queryBB)
+
+      const BB1 = oldBB.clone()
+      const BB2 = oldBB.clone()
+      const BB_XZ = BB1.clone().extend(dx, 0, dz)
+
+      let dy1 = dy
+      let dy2 = dy
+      for (const blockBB of surroundingBBs) {
+        dy1 = blockBB.computeOffsetY(BB_XZ, dy1)
+        dy2 = blockBB.computeOffsetY(BB2, dy2)
+      }
+      BB1.offset(0, dy1, 0)
+      BB2.offset(0, dy2, 0)
+
+      let dx1 = oldVelX
+      let dx2 = oldVelX
+      for (const blockBB of surroundingBBs) {
+        dx1 = blockBB.computeOffsetX(BB1, dx1)
+        dx2 = blockBB.computeOffsetX(BB2, dx2)
+      }
+      BB1.offset(dx1, 0, 0)
+      BB2.offset(dx2, 0, 0)
+
+      let dz1 = oldVelZ
+      let dz2 = oldVelZ
+      for (const blockBB of surroundingBBs) {
+        dz1 = blockBB.computeOffsetZ(BB1, dz1)
+        dz2 = blockBB.computeOffsetZ(BB2, dz2)
+      }
+      BB1.offset(0, 0, dz1)
+      BB2.offset(0, 0, dz2)
+
+      const norm1 = dx1 * dx1 + dz1 * dz1
+      const norm2 = dx2 * dx2 + dz2 * dz2
+
+      if (norm1 > norm2) {
+        dx = dx1
+        dy = -dy1
+        dz = dz1
+        playerBB = BB1
+      } else {
+        dx = dx2
+        dy = -dy2
+        dz = dz2
+        playerBB = BB2
+      }
+
+      for (const blockBB of surroundingBBs) {
+        dy = blockBB.computeOffsetY(playerBB, dy)
+      }
+      playerBB.offset(0, dy, 0)
+
+      if (oldVelXCol * oldVelXCol + oldVelZCol * oldVelZCol >= dx * dx + dz * dz) {
+        dx = oldVelXCol
+        dy = oldVelYCol
+        dz = oldVelZCol
+        playerBB = oldBBCol
+      }
+    }
+
+    // Update flags
+    setPositionToBB(playerBB, pos)
+    entity.isCollidedHorizontally = dx !== oldVelX || dz !== oldVelZ
+    entity.isCollidedVertically = dy !== oldVelY
+    entity.onGround = entity.isCollidedVertically && oldVelY < 0
+
+    const blockAtFeet = world.getBlock(pos.offset(0, -0.2, 0))
+
+    if (dx !== oldVelX) vel.x = 0
+    if (dz !== oldVelZ) vel.z = 0
+    if (dy !== oldVelY) {
+      if (blockAtFeet && blockAtFeet.type === slimeBlockId && !entity.control.sneak) {
+        vel.y = -vel.y
+      } else {
+        vel.y = 0
+      }
+    }
+
+    // Finally, apply block collisions (web, soulsand...)
+    playerBB.contract(0.001, 0.001, 0.001)
+    const cursor = new Vec3(0, 0, 0)
+    for (cursor.y = Math.floor(playerBB.minY); cursor.y <= Math.floor(playerBB.maxY); cursor.y++) {
+      for (cursor.z = Math.floor(playerBB.minZ); cursor.z <= Math.floor(playerBB.maxZ); cursor.z++) {
+        for (cursor.x = Math.floor(playerBB.minX); cursor.x <= Math.floor(playerBB.maxX); cursor.x++) {
+          const block = world.getBlock(cursor)
+          if (block) {
+            if (supportFeature('velocityBlocksOnCollision')) {
+              if (block.type === soulsandId) {
+                vel.x *= physics.soulsandSpeed
+                vel.z *= physics.soulsandSpeed
+              } else if (block.type === honeyblockId) {
+                vel.x *= physics.honeyblockSpeed
+                vel.z *= physics.honeyblockSpeed
+              }
+            }
+            if (block.type === webId) {
+              entity.isInWeb = true
+            } else if (block.type === bubblecolumnId) {
+              const down = !block.metadata
+              const aboveBlock = world.getBlock(cursor.offset(0, 1, 0))
+              const bubbleDrag = (aboveBlock && aboveBlock.type === 0 /* air */) ? physics.bubbleColumnSurfaceDrag : physics.bubbleColumnDrag
+              if (down) {
+                vel.y = Math.max(bubbleDrag.maxDown, vel.y - bubbleDrag.down)
+              } else {
+                vel.y = Math.min(bubbleDrag.maxUp, vel.y + bubbleDrag.up)
+              }
+            }
+          }
+        }
+      }
+    }
+    if (supportFeature('velocityBlocksOnTop')) {
+      const blockBelow = world.getBlock(entity.pos.floored().offset(0, -0.5, 0))
+      if (blockBelow) {
+        if (blockBelow.type === soulsandId) {
+          vel.x *= physics.soulsandSpeed
+          vel.z *= physics.soulsandSpeed
+        } else if (blockBelow.type === honeyblockId) {
+          vel.x *= physics.honeyblockSpeed
+          vel.z *= physics.honeyblockSpeed
+        }
+      }
+    }
+  }
+
+  function getLookingVector (entity) {
+    // given a yaw pitch, we need the looking vector
+
+    // yaw is right handed rotation about y (up) starting from -z (north)
+    // pitch is -90 looking down, 90 looking up, 0 looking at horizon
+    // lets get its coordinate system.
+    // let x' = -z (north)
+    // let y' = -x (west)
+    // let z' = y (up)
+
+    // the non normalized looking vector in x', y', z' space is
+    // x' is cos(yaw)
+    // y' is sin(yaw)
+    // z' is tan(pitch)
+
+    // substituting back in x, y, z, we get the looking vector in the normal x, y, z space
+    // -z = cos(yaw) => z = -cos(yaw)
+    // -x = sin(yaw) => x = -sin(yaw)
+    // y = tan(pitch)
+
+    // normalizing the vectors, we divide each by |sqrt(x*x + y*y + z*z)|
+    // x*x + z*z = sin^2 + cos^2 = 1
+    // so |sqrt(xx+yy+zz)| = |sqrt(1+tan^2(pitch))|
+    //     = |sqrt(1+sin^2(pitch)/cos^2(pitch))|
+    //     = |sqrt((cos^2+sin^2)/cos^2(pitch))|
+    //     = |sqrt(1/cos^2(pitch))|
+    //     = |+/- 1/cos(pitch)|
+    //     = 1/cos(pitch) since pitch in [-90, 90]
+
+    // the looking vector is therefore
+    // x = -sin(yaw) * cos(pitch)
+    // y = tan(pitch) * cos(pitch) = sin(pitch)
+    // z = -cos(yaw) * cos(pitch)
+
+    const yaw = entity.yaw
+    const pitch = entity.pitch
+    const sinYaw = Math.sin(yaw)
+    const cosYaw = Math.cos(yaw)
+    const sinPitch = Math.sin(pitch)
+    const cosPitch = Math.cos(pitch)
+    const lookX = -sinYaw * cosPitch
+    const lookY = sinPitch
+    const lookZ = -cosYaw * cosPitch
+    const lookDir = new Vec3(lookX, lookY, lookZ)
+    return {
+      yaw,
+      pitch,
+      sinYaw,
+      cosYaw,
+      sinPitch,
+      cosPitch,
+      lookX,
+      lookY,
+      lookZ,
+      lookDir
+    }
+  }
+
+  function applyHeading (entity, strafe, forward, multiplier) {
+    let speed = Math.sqrt(strafe * strafe + forward * forward)
+    if (speed < 0.01) return new Vec3(0, 0, 0)
+
+    speed = multiplier / Math.max(speed, 1)
+
+    strafe *= speed
+    forward *= speed
+
+    const yaw = Math.PI - entity.yaw
+    const sin = Math.sin(yaw)
+    const cos = Math.cos(yaw)
+
+    const vel = entity.vel
+    vel.x -= strafe * cos + forward * sin
+    vel.z += forward * cos - strafe * sin
+  }
+
+  function isOnLadder (world, pos) {
+    const block = world.getBlock(pos)
+    return (block && (block.type === ladderId || block.type === vineId))
+  }
+
+  function doesNotCollide (world, pos) {
+    const pBB = getPlayerBB(pos)
+    return !getSurroundingBBs(world, pBB).some(x => pBB.intersects(x)) && getWaterInBB(world, pBB).length === 0
+  }
+
+  function moveEntityWithHeading (entity, world, strafe, forward) {
+    const vel = entity.vel
+    const pos = entity.pos
+
+    const gravityMultiplier = (vel.y <= 0 && entity.slowFalling > 0) ? physics.slowFalling : 1
+
+    if (entity.isInWater || entity.isInLava) {
+      // Water / Lava movement
+      const lastY = pos.y
+      let acceleration = physics.liquidAcceleration
+      const inertia = entity.isInWater ? physics.waterInertia : physics.lavaInertia
+      let horizontalInertia = inertia
+
+      if (entity.isInWater) {
+        let strider = Math.min(entity.depthStrider, 3)
+        if (!entity.onGround) {
+          strider *= 0.5
+        }
+        if (strider > 0) {
+          horizontalInertia += (0.546 - horizontalInertia) * strider / 3
+          acceleration += (0.7 - acceleration) * strider / 3
+        }
+
+        if (entity.dolphinsGrace > 0) horizontalInertia = 0.96
+      }
+
+      applyHeading(entity, strafe, forward, acceleration)
+      moveEntity(entity, world, vel.x, vel.y, vel.z)
+      vel.y *= inertia
+      vel.y -= (entity.isInWater ? physics.waterGravity : physics.lavaGravity) * gravityMultiplier
+      vel.x *= horizontalInertia
+      vel.z *= horizontalInertia
+
+      if (entity.isCollidedHorizontally && doesNotCollide(world, pos.offset(vel.x, vel.y + 0.6 - pos.y + lastY, vel.z))) {
+        vel.y = physics.outOfLiquidImpulse // jump out of liquid
+      }
+    } else if (entity.elytraFlying) {
+      const {
+        pitch,
+        sinPitch,
+        cosPitch,
+        lookDir
+      } = getLookingVector(entity)
+      const horizontalSpeed = Math.sqrt(vel.x * vel.x + vel.z * vel.z)
+      const cosPitchSquared = cosPitch * cosPitch
+      vel.y += physics.gravity * gravityMultiplier * (-1.0 + cosPitchSquared * 0.75)
+      // cosPitch is in [0, 1], so cosPitch > 0.0 is just to protect against
+      // divide by zero errors
+      if (vel.y < 0.0 && cosPitch > 0.0) {
+        const movingDownSpeedModifier = vel.y * (-0.1) * cosPitchSquared
+        vel.x += lookDir.x * movingDownSpeedModifier / cosPitch
+        vel.y += movingDownSpeedModifier
+        vel.z += lookDir.z * movingDownSpeedModifier / cosPitch
+      }
+
+      if (pitch < 0.0 && cosPitch > 0.0) {
+        const lookDownSpeedModifier = horizontalSpeed * (-sinPitch) * 0.04
+        vel.x += -lookDir.x * lookDownSpeedModifier / cosPitch
+        vel.y += lookDownSpeedModifier * 3.2
+        vel.z += -lookDir.z * lookDownSpeedModifier / cosPitch
+      }
+
+      if (cosPitch > 0.0) {
+        vel.x += (lookDir.x / cosPitch * horizontalSpeed - vel.x) * 0.1
+        vel.z += (lookDir.z / cosPitch * horizontalSpeed - vel.z) * 0.1
+      }
+
+      vel.x *= 0.99
+      vel.y *= 0.98
+      vel.z *= 0.99
+      moveEntity(entity, world, vel.x, vel.y, vel.z)
+
+      if (entity.onGround) {
+        entity.elytraFlying = false
+      }
+    } else {
+      // Normal movement
+      let acceleration = 0.0
+      let inertia = 0.0
+      const blockUnder = world.getBlock(pos.offset(0, -1, 0))
+      if (entity.onGround && blockUnder) {
+        let playerSpeedAttribute
+        if (entity.attributes && entity.attributes[physics.movementSpeedAttribute]) {
+          // Use server-side player attributes
+          playerSpeedAttribute = entity.attributes[physics.movementSpeedAttribute]
+        } else {
+          // Create an attribute if the player does not have it
+          playerSpeedAttribute = attribute.createAttributeValue(physics.playerSpeed)
+        }
+        // Client-side sprinting (don't rely on server-side sprinting)
+        // setSprinting in LivingEntity.java
+        playerSpeedAttribute = attribute.deleteAttributeModifier(playerSpeedAttribute, physics.sprintingUUID) // always delete sprinting (if it exists)
+        if (entity.control.sprint) {
+          if (!attribute.checkAttributeModifier(playerSpeedAttribute, physics.sprintingUUID)) {
+            playerSpeedAttribute = attribute.addAttributeModifier(playerSpeedAttribute, {
+              uuid: physics.sprintingUUID,
+              amount: physics.sprintSpeed,
+              operation: 2
+            })
+          }
+        }
+        // Calculate what the speed is (0.1 if no modification)
+        const attributeSpeed = attribute.getAttributeValue(playerSpeedAttribute)
+        inertia = (blockSlipperiness[blockUnder.type] || physics.defaultSlipperiness) * 0.91
+        acceleration = attributeSpeed * (0.1627714 / (inertia * inertia * inertia))
+        if (acceleration < 0) acceleration = 0 // acceleration should not be negative
+      } else {
+        acceleration = physics.airborneAcceleration
+        inertia = physics.airborneInertia
+
+        if (entity.control.sprint) {
+          const airSprintFactor = physics.airborneAcceleration * 0.3
+          acceleration += airSprintFactor
+        }
+      }
+
+      applyHeading(entity, strafe, forward, acceleration)
+
+      if (isOnLadder(world, pos)) {
+        vel.x = math.clamp(-physics.ladderMaxSpeed, vel.x, physics.ladderMaxSpeed)
+        vel.z = math.clamp(-physics.ladderMaxSpeed, vel.z, physics.ladderMaxSpeed)
+        vel.y = Math.max(vel.y, entity.control.sneak ? 0 : -physics.ladderMaxSpeed)
+      }
+
+      moveEntity(entity, world, vel.x, vel.y, vel.z)
+
+      if (isOnLadder(world, pos) && (entity.isCollidedHorizontally ||
+        (supportFeature('climbUsingJump') && entity.control.jump))) {
+        vel.y = physics.ladderClimbSpeed // climb ladder
+      }
+
+      // Apply friction and gravity
+      if (entity.levitation > 0) {
+        vel.y += (0.05 * entity.levitation - vel.y) * 0.2
+      } else {
+        vel.y -= physics.gravity * gravityMultiplier
+      }
+      vel.y *= physics.airdrag
+      vel.x *= inertia
+      vel.z *= inertia
+    }
+  }
+
+  function isMaterialInBB (world, queryBB, types) {
+    const cursor = new Vec3(0, 0, 0)
+    for (cursor.y = Math.floor(queryBB.minY); cursor.y <= Math.floor(queryBB.maxY); cursor.y++) {
+      for (cursor.z = Math.floor(queryBB.minZ); cursor.z <= Math.floor(queryBB.maxZ); cursor.z++) {
+        for (cursor.x = Math.floor(queryBB.minX); cursor.x <= Math.floor(queryBB.maxX); cursor.x++) {
+          const block = world.getBlock(cursor)
+          if (block && types.includes(block.type)) return true
+        }
+      }
+    }
+    return false
+  }
+
+  function getLiquidHeightPcent (block) {
+    return (getRenderedDepth(block) + 1) / 9
+  }
+
+  function getRenderedDepth (block) {
+    if (!block) return -1
+    if (waterLike.has(block.type)) return 0
+    if (block.getProperties().waterlogged) return 0
+    if (!waterIds.includes(block.type)) return -1
+    const meta = block.metadata
+    return meta >= 8 ? 0 : meta
+  }
+
+  function getFlow (world, block) {
+    const curlevel = getRenderedDepth(block)
+    const flow = new Vec3(0, 0, 0)
+    for (const [dx, dz] of [[0, 1], [-1, 0], [0, -1], [1, 0]]) {
+      const adjBlock = world.getBlock(block.position.offset(dx, 0, dz))
+      const adjLevel = getRenderedDepth(adjBlock)
+      if (adjLevel < 0) {
+        if (adjBlock && adjBlock.boundingBox !== 'empty') {
+          const adjLevel = getRenderedDepth(world.getBlock(block.position.offset(dx, -1, dz)))
+          if (adjLevel >= 0) {
+            const f = adjLevel - (curlevel - 8)
+            flow.x += dx * f
+            flow.z += dz * f
+          }
+        }
+      } else {
+        const f = adjLevel - curlevel
+        flow.x += dx * f
+        flow.z += dz * f
+      }
+    }
+
+    if (block.metadata >= 8) {
+      for (const [dx, dz] of [[0, 1], [-1, 0], [0, -1], [1, 0]]) {
+        const adjBlock = world.getBlock(block.position.offset(dx, 0, dz))
+        const adjUpBlock = world.getBlock(block.position.offset(dx, 1, dz))
+        if ((adjBlock && adjBlock.boundingBox !== 'empty') || (adjUpBlock && adjUpBlock.boundingBox !== 'empty')) {
+          flow.normalize().translate(0, -6, 0)
+        }
+      }
+    }
+
+    return flow.normalize()
+  }
+
+  function getWaterInBB (world, bb) {
+    const waterBlocks = []
+    const cursor = new Vec3(0, 0, 0)
+    for (cursor.y = Math.floor(bb.minY); cursor.y <= Math.floor(bb.maxY); cursor.y++) {
+      for (cursor.z = Math.floor(bb.minZ); cursor.z <= Math.floor(bb.maxZ); cursor.z++) {
+        for (cursor.x = Math.floor(bb.minX); cursor.x <= Math.floor(bb.maxX); cursor.x++) {
+          const block = world.getBlock(cursor)
+          if (block && (waterIds.includes(block.type) || waterLike.has(block.type) || block.getProperties().waterlogged)) {
+            const waterLevel = cursor.y + 1 - getLiquidHeightPcent(block)
+            if (Math.ceil(bb.maxY) >= waterLevel) waterBlocks.push(block)
+          }
+        }
+      }
+    }
+    return waterBlocks
+  }
+
+  function isInWaterApplyCurrent (world, bb, vel) {
+    const acceleration = new Vec3(0, 0, 0)
+    const waterBlocks = getWaterInBB(world, bb)
+    const isInWater = waterBlocks.length > 0
+    for (const block of waterBlocks) {
+      const flow = getFlow(world, block)
+      acceleration.add(flow)
+    }
+
+    const len = acceleration.norm()
+    if (len > 0) {
+      vel.x += acceleration.x / len * 0.014
+      vel.y += acceleration.y / len * 0.014
+      vel.z += acceleration.z / len * 0.014
+    }
+    return isInWater
+  }
+
+  physics.simulatePlayer = (entity, world) => {
+    const vel = entity.vel
+    const pos = entity.pos
+
+    const waterBB = getPlayerBB(pos).contract(0.001, 0.401, 0.001)
+    const lavaBB = getPlayerBB(pos).contract(0.1, 0.4, 0.1)
+
+    entity.isInWater = isInWaterApplyCurrent(world, waterBB, vel)
+    entity.isInLava = isMaterialInBB(world, lavaBB, lavaIds)
+
+    // Reset velocity component if it falls under the threshold
+    if (Math.abs(vel.x) < physics.negligeableVelocity) vel.x = 0
+    if (Math.abs(vel.y) < physics.negligeableVelocity) vel.y = 0
+    if (Math.abs(vel.z) < physics.negligeableVelocity) vel.z = 0
+
+    // Handle inputs
+    if (entity.control.jump || entity.jumpQueued) {
+      if (entity.jumpTicks > 0) entity.jumpTicks--
+      if (entity.isInWater || entity.isInLava) {
+        vel.y += 0.04
+      } else if (entity.onGround && entity.jumpTicks === 0) {
+        const blockBelow = world.getBlock(entity.pos.floored().offset(0, -0.5, 0))
+        vel.y = Math.fround(0.42) * ((blockBelow && blockBelow.type === honeyblockId) ? physics.honeyblockJumpSpeed : 1)
+        if (entity.jumpBoost > 0) {
+          vel.y += 0.1 * entity.jumpBoost
+        }
+        if (entity.control.sprint) {
+          const yaw = Math.PI - entity.yaw
+          vel.x -= Math.sin(yaw) * 0.2
+          vel.z += Math.cos(yaw) * 0.2
+        }
+        entity.jumpTicks = physics.autojumpCooldown
+      }
+    } else {
+      entity.jumpTicks = 0 // reset autojump cooldown
+    }
+    entity.jumpQueued = false
+
+    let strafe = (entity.control.right - entity.control.left) * 0.98
+    let forward = (entity.control.forward - entity.control.back) * 0.98
+
+    if (entity.control.sneak) {
+      strafe *= physics.sneakSpeed
+      forward *= physics.sneakSpeed
+    }
+
+    entity.elytraFlying = entity.elytraFlying && entity.elytraEquipped && !entity.onGround && !entity.levitation
+
+    if (entity.fireworkRocketDuration > 0) {
+      if (!entity.elytraFlying) {
+        entity.fireworkRocketDuration = 0
+      } else {
+        const { lookDir } = getLookingVector(entity)
+        vel.x += lookDir.x * 0.1 + (lookDir.x * 1.5 - vel.x) * 0.5
+        vel.y += lookDir.y * 0.1 + (lookDir.y * 1.5 - vel.y) * 0.5
+        vel.z += lookDir.z * 0.1 + (lookDir.z * 1.5 - vel.z) * 0.5
+        --entity.fireworkRocketDuration
+      }
+    }
+
+    moveEntityWithHeading(entity, world, strafe, forward)
+
+    return entity
+  }
+
+  return physics
+}
+
+function getEffectLevel (mcData, effectName, effects) {
+  const effectDescriptor = mcData.effectsByName[effectName]
+  if (!effectDescriptor) {
+    return 0
+  }
+  const effectInfo = effects[effectDescriptor.id]
+  if (!effectInfo) {
+    return 0
+  }
+  return effectInfo.amplifier + 1
+}
+
+function getEnchantmentLevel (mcData, enchantmentName, enchantments) {
+  const enchantmentDescriptor = mcData.enchantmentsByName[enchantmentName]
+  if (!enchantmentDescriptor) {
+    return 0
+  }
+
+  for (const enchInfo of enchantments) {
+    if (typeof enchInfo.id === 'string') {
+      if (enchInfo.id.includes(enchantmentName)) {
+        return enchInfo.lvl
+      }
+    } else if (enchInfo.id === enchantmentDescriptor.id) {
+      return enchInfo.lvl
+    }
+  }
+  return 0
+}
+
+class PlayerState {
+  constructor (bot, control) {
+    const mcData = __webpack_require__(915)(bot.version)
+    const nbt = __webpack_require__(3624)
+
+    // Input / Outputs
+    this.pos = bot.entity.position.clone()
+    this.vel = bot.entity.velocity.clone()
+    this.onGround = bot.entity.onGround
+    this.isInWater = bot.entity.isInWater
+    this.isInLava = bot.entity.isInLava
+    this.isInWeb = bot.entity.isInWeb
+    this.isCollidedHorizontally = bot.entity.isCollidedHorizontally
+    this.isCollidedVertically = bot.entity.isCollidedVertically
+    this.elytraFlying = bot.entity.elytraFlying
+    this.jumpTicks = bot.jumpTicks
+    this.jumpQueued = bot.jumpQueued
+    this.fireworkRocketDuration = bot.fireworkRocketDuration
+
+    // Input only (not modified)
+    this.attributes = bot.entity.attributes
+    this.yaw = bot.entity.yaw
+    this.pitch = bot.entity.pitch
+    this.control = control
+
+    // effects
+    const effects = bot.entity.effects
+
+    this.jumpBoost = getEffectLevel(mcData, 'JumpBoost', effects)
+    this.speed = getEffectLevel(mcData, 'Speed', effects)
+    this.slowness = getEffectLevel(mcData, 'Slowness', effects)
+
+    this.dolphinsGrace = getEffectLevel(mcData, 'DolphinsGrace', effects)
+    this.slowFalling = getEffectLevel(mcData, 'SlowFalling', effects)
+    this.levitation = getEffectLevel(mcData, 'Levitation', effects)
+
+    // armour enchantments
+    const boots = bot.inventory.slots[8]
+    if (boots && boots.nbt) {
+      const simplifiedNbt = nbt.simplify(boots.nbt)
+      const enchantments = simplifiedNbt.Enchantments ?? simplifiedNbt.ench ?? []
+      this.depthStrider = getEnchantmentLevel(mcData, 'depth_strider', enchantments)
+    } else {
+      this.depthStrider = 0
+    }
+
+    // extra elytra requirements
+    const item = bot.inventory.slots[6]
+    this.elytraEquipped = item != null && item.name === 'elytra'
+  }
+
+  apply (bot) {
+    bot.entity.position = this.pos
+    bot.entity.velocity = this.vel
+    bot.entity.onGround = this.onGround
+    bot.entity.isInWater = this.isInWater
+    bot.entity.isInLava = this.isInLava
+    bot.entity.isInWeb = this.isInWeb
+    bot.entity.isCollidedHorizontally = this.isCollidedHorizontally
+    bot.entity.isCollidedVertically = this.isCollidedVertically
+    bot.entity.elytraFlying = this.elytraFlying
+    bot.jumpTicks = this.jumpTicks
+    bot.jumpQueued = this.jumpQueued
+    bot.fireworkRocketDuration = this.fireworkRocketDuration
+  }
+}
+
+module.exports = { Physics, PlayerState }
+
+
+/***/ }),
+
+/***/ 7259:
+/***/ ((module) => {
+
+class AABB {
+  constructor (x0, y0, z0, x1, y1, z1) {
+    this.minX = x0
+    this.minY = y0
+    this.minZ = z0
+    this.maxX = x1
+    this.maxY = y1
+    this.maxZ = z1
+  }
+
+  clone () {
+    return new AABB(this.minX, this.minY, this.minZ, this.maxX, this.maxY, this.maxZ)
+  }
+
+  floor () {
+    this.minX = Math.floor(this.minX)
+    this.minY = Math.floor(this.minY)
+    this.minZ = Math.floor(this.minZ)
+    this.maxX = Math.floor(this.maxX)
+    this.maxY = Math.floor(this.maxY)
+    this.maxZ = Math.floor(this.maxZ)
+  }
+
+  extend (dx, dy, dz) {
+    if (dx < 0) this.minX += dx
+    else this.maxX += dx
+
+    if (dy < 0) this.minY += dy
+    else this.maxY += dy
+
+    if (dz < 0) this.minZ += dz
+    else this.maxZ += dz
+
+    return this
+  }
+
+  contract (x, y, z) {
+    this.minX += x
+    this.minY += y
+    this.minZ += z
+    this.maxX -= x
+    this.maxY -= y
+    this.maxZ -= z
+    return this
+  }
+
+  expand (x, y, z) {
+    this.minX -= x
+    this.minY -= y
+    this.minZ -= z
+    this.maxX += x
+    this.maxY += y
+    this.maxZ += z
+    return this
+  }
+
+  offset (x, y, z) {
+    this.minX += x
+    this.minY += y
+    this.minZ += z
+    this.maxX += x
+    this.maxY += y
+    this.maxZ += z
+    return this
+  }
+
+  computeOffsetX (other, offsetX) {
+    if (other.maxY > this.minY && other.minY < this.maxY && other.maxZ > this.minZ && other.minZ < this.maxZ) {
+      if (offsetX > 0.0 && other.maxX <= this.minX) {
+        offsetX = Math.min(this.minX - other.maxX, offsetX)
+      } else if (offsetX < 0.0 && other.minX >= this.maxX) {
+        offsetX = Math.max(this.maxX - other.minX, offsetX)
+      }
+    }
+    return offsetX
+  }
+
+  computeOffsetY (other, offsetY) {
+    if (other.maxX > this.minX && other.minX < this.maxX && other.maxZ > this.minZ && other.minZ < this.maxZ) {
+      if (offsetY > 0.0 && other.maxY <= this.minY) {
+        offsetY = Math.min(this.minY - other.maxY, offsetY)
+      } else if (offsetY < 0.0 && other.minY >= this.maxY) {
+        offsetY = Math.max(this.maxY - other.minY, offsetY)
+      }
+    }
+    return offsetY
+  }
+
+  computeOffsetZ (other, offsetZ) {
+    if (other.maxX > this.minX && other.minX < this.maxX && other.maxY > this.minY && other.minY < this.maxY) {
+      if (offsetZ > 0.0 && other.maxZ <= this.minZ) {
+        offsetZ = Math.min(this.minZ - other.maxZ, offsetZ)
+      } else if (offsetZ < 0.0 && other.minZ >= this.maxZ) {
+        offsetZ = Math.max(this.maxZ - other.minZ, offsetZ)
+      }
+    }
+    return offsetZ
+  }
+
+  intersects (other) {
+    return this.minX < other.maxX && this.maxX > other.minX &&
+           this.minY < other.maxY && this.maxY > other.minY &&
+           this.minZ < other.maxZ && this.maxZ > other.minZ
+  }
+}
+
+module.exports = AABB
+
+
+/***/ }),
+
+/***/ 7689:
+/***/ ((__unused_webpack_module, exports) => {
+
+exports.getAttributeValue = function (prop) {
+  let x = prop.value
+  for (const mod of prop.modifiers) {
+    if (mod.operation !== 0) continue
+    x += mod.amount
+  }
+  let y = x
+  for (const mod of prop.modifiers) {
+    if (mod.operation !== 1) continue
+    y += x * mod.amount
+  }
+  for (const mod of prop.modifiers) {
+    if (mod.operation !== 2) continue
+    y += y * mod.amount
+  }
+  return y
+}
+
+exports.createAttributeValue = function (base) {
+  const attributes = {
+    value: base,
+    modifiers: []
+  }
+  return attributes
+}
+
+exports.addAttributeModifier = function (attributes, modifier) {
+  const end = attributes.modifiers.length
+  // add modifer at the end
+  attributes.modifiers[end] = modifier
+  return attributes
+}
+
+exports.checkAttributeModifier = function (attributes, uuid) {
+  for (const modifier of attributes.modifiers) {
+    if (modifier.uuid === uuid) return true
+  }
+  return false
+}
+
+exports.deleteAttributeModifier = function (attributes, uuid) {
+  attributes.modifiers = attributes.modifiers.filter(modifier => modifier.uuid !== uuid)
+  return attributes
+}
+
+
+/***/ }),
+
+/***/ 5607:
+/***/ ((__unused_webpack_module, exports) => {
+
+exports.clamp = function clamp (min, x, max) {
+  return Math.max(min, Math.min(x, max))
 }
 
 
@@ -93845,6 +95442,14 @@ module.exports = /*#__PURE__*/JSON.parse('["0.14","0.15","1.0","1.16.201","1.16.
 
 /***/ }),
 
+/***/ 9424:
+/***/ ((module) => {
+
+"use strict";
+module.exports = /*#__PURE__*/JSON.parse('{"pc":{"0.30c":{"blocks":"pc/0.30c","protocol":"pc/0.30c","version":"pc/0.30c","proto":"pc/0.30c"},"1.7":{"attributes":"pc/1.7","blocks":"pc/1.7","blockCollisionShapes":"pc/1.7","biomes":"pc/1.7","enchantments":"pc/1.7","effects":"pc/1.7","items":"pc/1.7","recipes":"pc/1.8","instruments":"pc/1.7","materials":"pc/1.7","entities":"pc/1.7","protocol":"pc/1.7","windows":"pc/1.7","version":"pc/1.7","language":"pc/1.7","foods":"pc/1.7","particles":"pc/1.7","tints":"pc/1.16.2","mapIcons":"pc/1.7","proto":"pc/1.7"},"1.8":{"attributes":"pc/1.8","blocks":"pc/1.8","blockCollisionShapes":"pc/1.8","biomes":"pc/1.8","enchantments":"pc/1.8","effects":"pc/1.8","items":"pc/1.8","recipes":"pc/1.8","instruments":"pc/1.8","materials":"pc/1.8","entities":"pc/1.8","protocol":"pc/1.8","windows":"pc/1.8","version":"pc/1.8","language":"pc/1.8","foods":"pc/1.8","particles":"pc/1.8","tints":"pc/1.16.2","mapIcons":"pc/1.7","proto":"pc/1.8"},"15w40b":{"attributes":"pc/1.9","blocks":"pc/1.9","blockCollisionShapes":"pc/1.9","biomes":"pc/1.9","effects":"pc/1.9","enchantments":"pc/1.9","items":"pc/1.9","recipes":"pc/1.9","instruments":"pc/1.9","materials":"pc/1.9","entities":"pc/1.9","protocol":"pc/15w40b","windows":"pc/1.9","version":"pc/15w40b","language":"pc/1.9","particles":"pc/15w40b","tints":"pc/1.16.2","mapIcons":"pc/1.7","proto":"pc/15w40b"},"1.9":{"attributes":"pc/1.9","blocks":"pc/1.9","blockCollisionShapes":"pc/1.9","biomes":"pc/1.9","effects":"pc/1.9","enchantments":"pc/1.9","items":"pc/1.9","recipes":"pc/1.9","instruments":"pc/1.9","materials":"pc/1.9","entities":"pc/1.9","protocol":"pc/1.9","windows":"pc/1.9","version":"pc/1.9","language":"pc/1.9","foods":"pc/1.9","particles":"pc/1.9","tints":"pc/1.16.2","mapIcons":"pc/1.7","proto":"pc/1.9"},"1.9.1-pre2":{"attributes":"pc/1.9","blocks":"pc/1.9","blockCollisionShapes":"pc/1.9","biomes":"pc/1.9","effects":"pc/1.9","enchantments":"pc/1.9","items":"pc/1.9","recipes":"pc/1.9","instruments":"pc/1.9","materials":"pc/1.9","entities":"pc/1.9","protocol":"pc/1.9.1-pre2","windows":"pc/1.9","version":"pc/1.9.1-pre2","language":"pc/1.9","foods":"pc/1.9","particles":"pc/1.9","tints":"pc/1.16.2","mapIcons":"pc/1.7","proto":"pc/1.9.1-pre2"},"1.9.2":{"attributes":"pc/1.9","blocks":"pc/1.9","blockCollisionShapes":"pc/1.9","biomes":"pc/1.9","effects":"pc/1.9","enchantments":"pc/1.9","items":"pc/1.9","recipes":"pc/1.9","instruments":"pc/1.9","materials":"pc/1.9","entities":"pc/1.9","protocol":"pc/1.9.2","protocolComments":"pc/1.9.2","windows":"pc/1.9","version":"pc/1.9.2","language":"pc/1.9","foods":"pc/1.9","particles":"pc/1.9","tints":"pc/1.16.2","mapIcons":"pc/1.7","proto":"pc/1.9.2"},"1.9.4":{"attributes":"pc/1.9","blocks":"pc/1.9","blockCollisionShapes":"pc/1.9","biomes":"pc/1.9","effects":"pc/1.9","enchantments":"pc/1.9","items":"pc/1.9","recipes":"pc/1.9","instruments":"pc/1.9","materials":"pc/1.9","entities":"pc/1.9","protocol":"pc/1.9.4","windows":"pc/1.9","version":"pc/1.9.4","language":"pc/1.9","foods":"pc/1.9","particles":"pc/1.9","tints":"pc/1.16.2","mapIcons":"pc/1.7","sounds":"pc/1.9.4","proto":"pc/1.9.4"},"16w20a":{"attributes":"pc/1.9","blocks":"pc/1.9","blockCollisionShapes":"pc/1.9","biomes":"pc/1.9","effects":"pc/1.9","enchantments":"pc/1.9","items":"pc/1.9","recipes":"pc/1.9","instruments":"pc/1.9","materials":"pc/1.9","entities":"pc/1.9","protocol":"pc/16w20a","windows":"pc/1.9","version":"pc/16w20a","language":"pc/1.9","foods":"pc/1.9","particles":"pc/1.10","tints":"pc/1.16.2","mapIcons":"pc/1.7","proto":"pc/16w20a"},"1.10-pre1":{"attributes":"pc/1.9","blocks":"pc/1.9","blockCollisionShapes":"pc/1.9","biomes":"pc/1.9","effects":"pc/1.9","enchantments":"pc/1.9","items":"pc/1.9","recipes":"pc/1.9","instruments":"pc/1.9","materials":"pc/1.9","entities":"pc/1.9","protocol":"pc/1.10-pre1","windows":"pc/1.9","version":"pc/1.10-pre1","language":"pc/1.9","foods":"pc/1.9","particles":"pc/1.10","tints":"pc/1.16.2","mapIcons":"pc/1.7","proto":"pc/1.10-pre1"},"1.10":{"attributes":"pc/1.10","blocks":"pc/1.10","blockCollisionShapes":"pc/1.10","biomes":"pc/1.10","effects":"pc/1.10","enchantments":"pc/1.10","items":"pc/1.10","recipes":"pc/1.10","instruments":"pc/1.10","materials":"pc/1.10","entities":"pc/1.10","protocol":"pc/1.10","windows":"pc/1.10","version":"pc/1.10","language":"pc/1.10","foods":"pc/1.10","particles":"pc/1.10","tints":"pc/1.16.2","mapIcons":"pc/1.7","proto":"pc/1.10"},"1.10.1":{"attributes":"pc/1.10","blocks":"pc/1.10","blockCollisionShapes":"pc/1.10","biomes":"pc/1.10","effects":"pc/1.10","enchantments":"pc/1.10","items":"pc/1.10","recipes":"pc/1.10","instruments":"pc/1.10","materials":"pc/1.10","entities":"pc/1.10","protocol":"pc/1.10","windows":"pc/1.10","version":"pc/1.10.1","language":"pc/1.10","foods":"pc/1.10","particles":"pc/1.10","tints":"pc/1.16.2","mapIcons":"pc/1.7"},"1.10.2":{"attributes":"pc/1.10","blocks":"pc/1.10","blockCollisionShapes":"pc/1.10","biomes":"pc/1.10","effects":"pc/1.10","enchantments":"pc/1.10","items":"pc/1.10","recipes":"pc/1.10","instruments":"pc/1.10","materials":"pc/1.10","entities":"pc/1.10","protocol":"pc/1.10","windows":"pc/1.10","version":"pc/1.10.2","language":"pc/1.10","foods":"pc/1.10","particles":"pc/1.10","tints":"pc/1.16.2","mapIcons":"pc/1.7","sounds":"pc/1.10.2"},"16w35a":{"attributes":"pc/1.10","blocks":"pc/1.10","blockCollisionShapes":"pc/1.10","biomes":"pc/1.10","effects":"pc/1.10","enchantments":"pc/1.10","items":"pc/1.10","recipes":"pc/1.10","instruments":"pc/1.10","materials":"pc/1.10","entities":"pc/1.10","protocol":"pc/16w35a","windows":"pc/1.10","version":"pc/16w35a","language":"pc/1.10","foods":"pc/1.10","particles":"pc/1.10","tints":"pc/1.16.2","mapIcons":"pc/1.7","proto":"pc/16w35a"},"1.11":{"attributes":"pc/1.11","blocks":"pc/1.11","blockCollisionShapes":"pc/1.11","biomes":"pc/1.11","effects":"pc/1.11","enchantments":"pc/1.11","items":"pc/1.11","recipes":"pc/1.11","instruments":"pc/1.11","materials":"pc/1.11","entities":"pc/1.11","protocol":"pc/1.11","protocolComments":"pc/1.11.2","windows":"pc/1.11","version":"pc/1.11","language":"pc/1.11","foods":"pc/1.11","particles":"pc/1.11","tints":"pc/1.16.2","mapIcons":"pc/1.11","proto":"pc/1.11"},"1.11.2":{"attributes":"pc/1.11","blocks":"pc/1.11","blockCollisionShapes":"pc/1.11","biomes":"pc/1.11","effects":"pc/1.11","enchantments":"pc/1.11","items":"pc/1.11","recipes":"pc/1.11","instruments":"pc/1.11","materials":"pc/1.11","entities":"pc/1.11","protocol":"pc/1.11","protocolComments":"pc/1.11.2","windows":"pc/1.11","version":"pc/1.11.2","language":"pc/1.11","foods":"pc/1.11","particles":"pc/1.11","tints":"pc/1.16.2","mapIcons":"pc/1.11","sounds":"pc/1.11.2"},"17w15a":{"attributes":"pc/1.11","blocks":"pc/1.11","blockCollisionShapes":"pc/1.11","biomes":"pc/1.11","effects":"pc/1.11","enchantments":"pc/1.11","items":"pc/1.11","recipes":"pc/1.11","instruments":"pc/1.11","materials":"pc/1.11","entities":"pc/1.11","protocol":"pc/17w15a","windows":"pc/1.11","version":"pc/17w15a","language":"pc/1.11","foods":"pc/1.11","particles":"pc/1.11","tints":"pc/1.16.2","mapIcons":"pc/1.11","proto":"pc/17w15a"},"17w18b":{"attributes":"pc/1.11","blocks":"pc/1.11","blockCollisionShapes":"pc/1.11","biomes":"pc/1.11","effects":"pc/1.11","enchantments":"pc/1.11","items":"pc/1.11","recipes":"pc/1.11","instruments":"pc/1.11","materials":"pc/1.11","entities":"pc/1.11","protocol":"pc/17w18b","windows":"pc/1.11","version":"pc/17w18b","language":"pc/1.11","foods":"pc/1.11","particles":"pc/1.11","tints":"pc/1.16.2","mapIcons":"pc/1.11","proto":"pc/17w18b"},"1.12-pre4":{"attributes":"pc/1.11","blocks":"pc/1.11","blockCollisionShapes":"pc/1.11","biomes":"pc/1.11","effects":"pc/1.11","enchantments":"pc/1.11","items":"pc/1.11","recipes":"pc/1.11","instruments":"pc/1.11","materials":"pc/1.11","entities":"pc/1.11","protocol":"pc/1.12-pre4","windows":"pc/1.11","version":"pc/1.12-pre4","language":"pc/1.11","foods":"pc/1.11","particles":"pc/1.11","tints":"pc/1.16.2","mapIcons":"pc/1.11","proto":"pc/1.12-pre4"},"1.12":{"attributes":"pc/1.12","blocks":"pc/1.12","blockCollisionShapes":"pc/1.12","biomes":"pc/1.12","effects":"pc/1.12","enchantments":"pc/1.12","items":"pc/1.12","recipes":"pc/1.12","instruments":"pc/1.12","materials":"pc/1.12","entities":"pc/1.12","protocol":"pc/1.12","windows":"pc/1.12","version":"pc/1.12","language":"pc/1.12","foods":"pc/1.12","particles":"pc/1.12","tints":"pc/1.16.2","mapIcons":"pc/1.11","proto":"pc/1.12"},"1.12.1":{"attributes":"pc/1.12","blocks":"pc/1.12","blockCollisionShapes":"pc/1.12","biomes":"pc/1.12","effects":"pc/1.12","enchantments":"pc/1.12","items":"pc/1.12","recipes":"pc/1.12","instruments":"pc/1.12","materials":"pc/1.12","entities":"pc/1.12","protocol":"pc/1.12.1","windows":"pc/1.12","version":"pc/1.12.1","language":"pc/1.12","foods":"pc/1.12","particles":"pc/1.12","tints":"pc/1.16.2","mapIcons":"pc/1.11","proto":"pc/1.12.1"},"1.12.2":{"attributes":"pc/1.12","blocks":"pc/1.12","blockCollisionShapes":"pc/1.12","biomes":"pc/1.12","effects":"pc/1.12","enchantments":"pc/1.12","items":"pc/1.12","recipes":"pc/1.12","instruments":"pc/1.12","materials":"pc/1.12","entities":"pc/1.12","protocol":"pc/1.12.2","windows":"pc/1.12","version":"pc/1.12.2","language":"pc/1.12","foods":"pc/1.12","particles":"pc/1.12","tints":"pc/1.16.2","mapIcons":"pc/1.11","sounds":"pc/1.12.2","proto":"pc/1.12.2"},"17w50a":{"attributes":"pc/1.12","blocks":"pc/1.12","blockCollisionShapes":"pc/1.12","biomes":"pc/1.12","effects":"pc/1.12","enchantments":"pc/1.12","items":"pc/1.12","recipes":"pc/1.12","instruments":"pc/1.12","materials":"pc/1.12","entities":"pc/1.12","protocol":"pc/17w50a","windows":"pc/1.12","version":"pc/17w50a","language":"pc/1.12","foods":"pc/1.12","particles":"pc/17w50a","tints":"pc/1.16.2","mapIcons":"pc/1.11","proto":"pc/17w50a"},"1.13":{"attributes":"pc/1.13","blocks":"pc/1.13","blockCollisionShapes":"pc/1.13","biomes":"pc/1.13","effects":"pc/1.13","enchantments":"pc/1.13","items":"pc/1.13","recipes":"pc/1.13","instruments":"pc/1.13","materials":"pc/1.13","entities":"pc/1.13","protocol":"pc/1.13","windows":"pc/1.13","version":"pc/1.13","language":"pc/1.13","foods":"pc/1.13.2","particles":"pc/1.13","commands":"pc/1.13","tints":"pc/1.16.2","mapIcons":"pc/1.13","proto":"pc/1.13"},"1.13.1":{"attributes":"pc/1.13","blocks":"pc/1.13","blockCollisionShapes":"pc/1.13","biomes":"pc/1.13","effects":"pc/1.13","enchantments":"pc/1.13","items":"pc/1.13","recipes":"pc/1.13","instruments":"pc/1.13","materials":"pc/1.13","entities":"pc/1.13","protocol":"pc/1.13.1","windows":"pc/1.13","version":"pc/1.13.1","language":"pc/1.13","foods":"pc/1.13.2","particles":"pc/1.13","commands":"pc/1.13.1","tints":"pc/1.16.2","mapIcons":"pc/1.13","proto":"pc/1.13.1"},"1.13.2-pre1":{"attributes":"pc/1.13","blocks":"pc/1.13","blockCollisionShapes":"pc/1.13","biomes":"pc/1.13","effects":"pc/1.13","enchantments":"pc/1.13","items":"pc/1.13","recipes":"pc/1.13","instruments":"pc/1.13","materials":"pc/1.13","entities":"pc/1.13","protocol":"pc/1.13.2-pre1","windows":"pc/1.13","version":"pc/1.13.2-pre1","language":"pc/1.13","foods":"pc/1.13.2","particles":"pc/1.13","tints":"pc/1.16.2","mapIcons":"pc/1.13","proto":"pc/1.13.2-pre1"},"1.13.2-pre2":{"attributes":"pc/1.13","blocks":"pc/1.13","blockCollisionShapes":"pc/1.13","biomes":"pc/1.13","effects":"pc/1.13","enchantments":"pc/1.13","items":"pc/1.13","recipes":"pc/1.13","instruments":"pc/1.13","materials":"pc/1.13","entities":"pc/1.13","protocol":"pc/1.13.2-pre2","windows":"pc/1.13","version":"pc/1.13.2-pre2","language":"pc/1.13","foods":"pc/1.13.2","particles":"pc/1.13","tints":"pc/1.16.2","mapIcons":"pc/1.13","proto":"pc/1.13.2-pre2"},"1.13.2":{"attributes":"pc/1.13","blocks":"pc/1.13.2","blockCollisionShapes":"pc/1.13.2","biomes":"pc/1.13.2","effects":"pc/1.13.2","enchantments":"pc/1.13.2","items":"pc/1.13.2","recipes":"pc/1.13.2","instruments":"pc/1.13.2","materials":"pc/1.13.2","entities":"pc/1.13.2","protocol":"pc/1.13.2","windows":"pc/1.13.2","version":"pc/1.13.2","language":"pc/1.13.2","foods":"pc/1.13.2","particles":"pc/1.13","commands":"pc/1.13.2","tints":"pc/1.16.2","mapIcons":"pc/1.13","sounds":"pc/1.13.2","proto":"pc/1.13.2"},"1.14":{"attributes":"pc/1.14","blocks":"pc/1.14.4","blockCollisionShapes":"pc/1.14","biomes":"pc/1.14","enchantments":"pc/1.13.2","effects":"pc/1.14.4","items":"pc/1.14","recipes":"pc/1.14","instruments":"pc/1.14.4","materials":"pc/1.14.4","entities":"pc/1.14","language":"pc/1.14","protocol":"pc/1.14","version":"pc/1.14","windows":"pc/1.14.4","foods":"pc/1.14.4","particles":"pc/1.14","blockLoot":"pc/1.14.4","entityLoot":"pc/1.14.4","commands":"pc/1.14","tints":"pc/1.16.2","mapIcons":"pc/1.13","sounds":"pc/1.14","proto":"pc/1.14"},"1.14.1":{"attributes":"pc/1.14","blocks":"pc/1.14.4","blockCollisionShapes":"pc/1.14.4","biomes":"pc/1.14","enchantments":"pc/1.13.2","effects":"pc/1.14.4","items":"pc/1.14","recipes":"pc/1.14","instruments":"pc/1.14.4","materials":"pc/1.14.4","entities":"pc/1.14","language":"pc/1.14","protocol":"pc/1.14.1","version":"pc/1.14.1","windows":"pc/1.14.4","foods":"pc/1.14.4","particles":"pc/1.14","blockLoot":"pc/1.14.4","entityLoot":"pc/1.14.4","commands":"pc/1.14.1","tints":"pc/1.16.2","mapIcons":"pc/1.13","proto":"pc/1.14.1"},"1.14.3":{"attributes":"pc/1.14","blocks":"pc/1.14.4","enchantments":"pc/1.13.2","blockCollisionShapes":"pc/1.14.4","biomes":"pc/1.14","effects":"pc/1.14.4","items":"pc/1.14","recipes":"pc/1.14","instruments":"pc/1.14.4","materials":"pc/1.14.4","entities":"pc/1.14","language":"pc/1.14","protocol":"pc/1.14.3","version":"pc/1.14.3","windows":"pc/1.14.4","foods":"pc/1.14.4","particles":"pc/1.14","blockLoot":"pc/1.14.4","entityLoot":"pc/1.14.4","commands":"pc/1.14.3","tints":"pc/1.16.2","mapIcons":"pc/1.13","proto":"pc/1.14.3"},"1.14.4":{"attributes":"pc/1.14","blocks":"pc/1.14.4","blockCollisionShapes":"pc/1.14.4","biomes":"pc/1.14.4","enchantments":"pc/1.13.2","effects":"pc/1.14.4","items":"pc/1.14.4","recipes":"pc/1.14.4","instruments":"pc/1.14.4","materials":"pc/1.14.4","entities":"pc/1.14.4","protocol":"pc/1.14.4","windows":"pc/1.14.4","version":"pc/1.14.4","language":"pc/1.14.4","foods":"pc/1.14.4","particles":"pc/1.14","blockLoot":"pc/1.14.4","entityLoot":"pc/1.14.4","commands":"pc/1.14.4","tints":"pc/1.16.2","mapIcons":"pc/1.13","sounds":"pc/1.14.4","proto":"pc/1.14.4"},"1.15":{"attributes":"pc/1.15","blockCollisionShapes":"pc/1.15","protocol":"pc/1.15","enchantments":"pc/1.13.2","version":"pc/1.15","blocks":"pc/1.15.2","biomes":"pc/1.15","effects":"pc/1.15.2","items":"pc/1.15.2","recipes":"pc/1.15.2","instruments":"pc/1.15.2","materials":"pc/1.15.2","entities":"pc/1.15.2","windows":"pc/1.15.2","language":"pc/1.15.2","foods":"pc/1.15.2","particles":"pc/1.15","blockLoot":"pc/1.15.2","entityLoot":"pc/1.15.2","commands":"pc/1.15","tints":"pc/1.16.2","mapIcons":"pc/1.13","sounds":"pc/1.15","proto":"pc/1.15"},"1.15.1":{"attributes":"pc/1.15","protocol":"pc/1.15.1","version":"pc/1.15.1","blocks":"pc/1.15.2","blockCollisionShapes":"pc/1.15.2","enchantments":"pc/1.13.2","biomes":"pc/1.15","effects":"pc/1.15.2","items":"pc/1.15.2","recipes":"pc/1.15.2","instruments":"pc/1.15.2","materials":"pc/1.15.2","entities":"pc/1.15.2","windows":"pc/1.15.2","language":"pc/1.15.2","foods":"pc/1.15.2","particles":"pc/1.15","blockLoot":"pc/1.15.2","entityLoot":"pc/1.15.2","commands":"pc/1.15.1","tints":"pc/1.16.2","mapIcons":"pc/1.13","proto":"pc/1.15.1"},"1.15.2":{"attributes":"pc/1.15","blocks":"pc/1.15.2","blockCollisionShapes":"pc/1.15.2","enchantments":"pc/1.13.2","biomes":"pc/1.15.2","effects":"pc/1.15.2","items":"pc/1.15.2","recipes":"pc/1.15.2","instruments":"pc/1.15.2","materials":"pc/1.15.2","entities":"pc/1.15.2","protocol":"pc/1.15.2","windows":"pc/1.15.2","version":"pc/1.15.2","language":"pc/1.15.2","foods":"pc/1.15.2","particles":"pc/1.15","blockLoot":"pc/1.15.2","entityLoot":"pc/1.15.2","commands":"pc/1.15.2","tints":"pc/1.16.2","mapIcons":"pc/1.13","sounds":"pc/1.15.2","proto":"pc/1.15.2"},"20w13b":{"attributes":"pc/1.16","protocol":"pc/20w13b","version":"pc/20w13b","blocks":"pc/1.16.1","enchantments":"pc/1.13.2","biomes":"pc/1.16","effects":"pc/1.16.1","items":"pc/1.16.1","recipes":"pc/1.16.1","instruments":"pc/1.16.1","entities":"pc/1.16.1","windows":"pc/1.16.1","blockCollisionShapes":"pc/1.16.1","materials":"pc/1.16.1","language":"pc/1.16.1","foods":"pc/1.16.1","particles":"pc/20w13b","blockLoot":"pc/1.16.1","entityLoot":"pc/1.16.1","tints":"pc/1.16.2","mapIcons":"pc/1.16","proto":"pc/20w13b"},"20w14a":{"attributes":"pc/1.16","protocol":"pc/20w13b","version":"pc/20w14a","blocks":"pc/1.16.1","biomes":"pc/1.16","effects":"pc/1.16.1","enchantments":"pc/1.13.2","items":"pc/1.16.1","recipes":"pc/1.16.1","instruments":"pc/1.16.1","entities":"pc/1.16.1","windows":"pc/1.16.1","blockCollisionShapes":"pc/1.16.1","materials":"pc/1.16.1","language":"pc/1.16.1","foods":"pc/1.16.1","particles":"pc/20w13b","blockLoot":"pc/1.16.1","entityLoot":"pc/1.16.1","tints":"pc/1.16.2","mapIcons":"pc/1.16"},"1.16-rc1":{"attributes":"pc/1.16","protocol":"pc/1.16-rc1","version":"pc/1.16-rc1","blocks":"pc/1.16.1","biomes":"pc/1.16","effects":"pc/1.16.1","enchantments":"pc/1.13.2","items":"pc/1.16.1","recipes":"pc/1.16.1","instruments":"pc/1.16.1","entities":"pc/1.16.1","windows":"pc/1.16.1","blockCollisionShapes":"pc/1.16.1","materials":"pc/1.16.1","language":"pc/1.16.1","foods":"pc/1.16.1","particles":"pc/1.16","blockLoot":"pc/1.16.1","entityLoot":"pc/1.16.1","tints":"pc/1.16.2","mapIcons":"pc/1.16","proto":"pc/1.16-rc1"},"1.16":{"attributes":"pc/1.16","protocol":"pc/1.16","version":"pc/1.16","blocks":"pc/1.16.1","biomes":"pc/1.16.1","enchantments":"pc/1.13.2","effects":"pc/1.16.1","items":"pc/1.16.1","recipes":"pc/1.16.1","instruments":"pc/1.16.1","entities":"pc/1.16.1","windows":"pc/1.16.1","blockCollisionShapes":"pc/1.16.1","materials":"pc/1.16.1","language":"pc/1.16.1","foods":"pc/1.16.1","particles":"pc/1.16","blockLoot":"pc/1.16.1","entityLoot":"pc/1.16.1","commands":"pc/1.16","loginPacket":"pc/1.16","tints":"pc/1.16.2","mapIcons":"pc/1.16","sounds":"pc/1.16","proto":"pc/1.16"},"1.16.1":{"attributes":"pc/1.16","blocks":"pc/1.16.1","blockCollisionShapes":"pc/1.16.1","biomes":"pc/1.16.1","effects":"pc/1.16.1","items":"pc/1.16.1","recipes":"pc/1.16.1","instruments":"pc/1.16.1","materials":"pc/1.16.1","enchantments":"pc/1.13.2","language":"pc/1.16.1","entities":"pc/1.16.1","protocol":"pc/1.16.1","windows":"pc/1.16.1","version":"pc/1.16.1","foods":"pc/1.16.1","particles":"pc/1.16","blockLoot":"pc/1.16.1","entityLoot":"pc/1.16.1","commands":"pc/1.16.1","loginPacket":"pc/1.16","tints":"pc/1.16.2","mapIcons":"pc/1.16","proto":"pc/1.16.1"},"1.16.2":{"attributes":"pc/1.16","blocks":"pc/1.16.2","blockCollisionShapes":"pc/1.16.1","biomes":"pc/1.16.2","effects":"pc/1.16.1","items":"pc/1.16.2","enchantments":"pc/1.13.2","recipes":"pc/1.16.2","instruments":"pc/1.16.1","materials":"pc/1.16.2","language":"pc/1.16.1","entities":"pc/1.16.2","protocol":"pc/1.16.2","windows":"pc/1.16.1","version":"pc/1.16.2","foods":"pc/1.16.1","particles":"pc/1.16","blockLoot":"pc/1.16.2","entityLoot":"pc/1.16.2","commands":"pc/1.16.2","loginPacket":"pc/1.16.2","tints":"pc/1.16.2","mapIcons":"pc/1.16","proto":"pc/1.16.2"},"1.16.3":{"attributes":"pc/1.16","blocks":"pc/1.16.2","blockCollisionShapes":"pc/1.16.1","biomes":"pc/1.16.2","effects":"pc/1.16.1","items":"pc/1.16.2","enchantments":"pc/1.13.2","recipes":"pc/1.16.2","instruments":"pc/1.16.1","materials":"pc/1.16.2","language":"pc/1.16.1","entities":"pc/1.16.2","protocol":"pc/1.16.2","windows":"pc/1.16.1","version":"pc/1.16.3","foods":"pc/1.16.1","particles":"pc/1.16","blockLoot":"pc/1.16.2","entityLoot":"pc/1.16.2","loginPacket":"pc/1.16.2","tints":"pc/1.16.2","mapIcons":"pc/1.16"},"1.16.4":{"attributes":"pc/1.16","blocks":"pc/1.16.2","blockCollisionShapes":"pc/1.16.1","biomes":"pc/1.16.2","effects":"pc/1.16.1","items":"pc/1.16.2","enchantments":"pc/1.16.4","recipes":"pc/1.16.2","instruments":"pc/1.16.1","materials":"pc/1.16.2","language":"pc/1.16.1","entities":"pc/1.16.2","protocol":"pc/1.16.2","windows":"pc/1.16.1","version":"pc/1.16.4","foods":"pc/1.16.1","particles":"pc/1.16","blockLoot":"pc/1.16.2","entityLoot":"pc/1.16.2","loginPacket":"pc/1.16.2","tints":"pc/1.16.2","mapIcons":"pc/1.16"},"1.16.5":{"attributes":"pc/1.16","blocks":"pc/1.16.2","blockCollisionShapes":"pc/1.16.1","biomes":"pc/1.16.2","effects":"pc/1.16.1","items":"pc/1.16.2","enchantments":"pc/1.16.4","recipes":"pc/1.16.2","instruments":"pc/1.16.1","materials":"pc/1.16.2","language":"pc/1.16.1","entities":"pc/1.16.2","protocol":"pc/1.16.2","windows":"pc/1.16.1","version":"pc/1.16.5","foods":"pc/1.16.1","particles":"pc/1.16","blockLoot":"pc/1.16.2","entityLoot":"pc/1.16.2","loginPacket":"pc/1.16.2","tints":"pc/1.16.2","mapIcons":"pc/1.16","sounds":"pc/1.16"},"21w07a":{"attributes":"pc/1.16","blocks":"pc/1.16.2","blockCollisionShapes":"pc/1.16.1","biomes":"pc/1.16.2","effects":"pc/1.16.1","items":"pc/1.16.2","enchantments":"pc/1.16.4","recipes":"pc/1.16.2","instruments":"pc/1.16.1","materials":"pc/1.16.2","language":"pc/1.16.1","entities":"pc/1.16.2","protocol":"pc/21w07a","windows":"pc/1.16.1","version":"pc/21w07a","foods":"pc/1.16.1","particles":"pc/1.16","blockLoot":"pc/1.16.2","entityLoot":"pc/1.16.2","loginPacket":"pc/1.16.2","tints":"pc/1.16.2","mapIcons":"pc/1.16","proto":"pc/21w07a"},"1.17":{"attributes":"pc/1.17","blocks":"pc/1.17","blockCollisionShapes":"pc/1.17","biomes":"pc/1.17","effects":"pc/1.17","items":"pc/1.17","enchantments":"pc/1.17","recipes":"pc/1.17","instruments":"pc/1.16.1","materials":"pc/1.17","language":"pc/1.17","entities":"pc/1.17","protocol":"pc/1.17","windows":"pc/1.16.1","version":"pc/1.17","foods":"pc/1.17","particles":"pc/1.17","blockLoot":"pc/1.17","entityLoot":"pc/1.17","loginPacket":"pc/1.17","tints":"pc/1.17","mapIcons":"pc/1.16","sounds":"pc/1.17","proto":"pc/1.17"},"1.17.1":{"attributes":"pc/1.17","blocks":"pc/1.17","blockCollisionShapes":"pc/1.17","biomes":"pc/1.17","effects":"pc/1.17","items":"pc/1.17","enchantments":"pc/1.17","recipes":"pc/1.17","instruments":"pc/1.16.1","materials":"pc/1.17","language":"pc/1.17","entities":"pc/1.17","protocol":"pc/1.17.1","windows":"pc/1.16.1","version":"pc/1.17.1","foods":"pc/1.17","particles":"pc/1.17","blockLoot":"pc/1.17","entityLoot":"pc/1.17","loginPacket":"pc/1.17","tints":"pc/1.17","mapIcons":"pc/1.16","sounds":"pc/1.17","proto":"pc/1.17.1"},"1.18":{"attributes":"pc/1.17","blocks":"pc/1.18","blockCollisionShapes":"pc/1.17","biomes":"pc/1.18","effects":"pc/1.17","items":"pc/1.18","enchantments":"pc/1.17","recipes":"pc/1.18","instruments":"pc/1.16.1","materials":"pc/1.18","language":"pc/1.18","entities":"pc/1.18","protocol":"pc/1.18","windows":"pc/1.16.1","version":"pc/1.18","foods":"pc/1.17","particles":"pc/1.18","blockLoot":"pc/1.18","entityLoot":"pc/1.18","loginPacket":"pc/1.18","tints":"pc/1.17","mapIcons":"pc/1.16","sounds":"pc/1.18","proto":"pc/1.18"},"1.18.1":{"attributes":"pc/1.17","blocks":"pc/1.18","blockCollisionShapes":"pc/1.17","biomes":"pc/1.18","effects":"pc/1.17","items":"pc/1.18","enchantments":"pc/1.17","recipes":"pc/1.18","instruments":"pc/1.16.1","materials":"pc/1.18","language":"pc/1.18","entities":"pc/1.18","protocol":"pc/1.18","windows":"pc/1.16.1","version":"pc/1.18.1","foods":"pc/1.17","particles":"pc/1.18","blockLoot":"pc/1.18","entityLoot":"pc/1.18","loginPacket":"pc/1.18","tints":"pc/1.17","mapIcons":"pc/1.16"},"1.18.2":{"attributes":"pc/1.17","blocks":"pc/1.18","blockCollisionShapes":"pc/1.17","biomes":"pc/1.18","effects":"pc/1.17","items":"pc/1.18","enchantments":"pc/1.17","recipes":"pc/1.18","instruments":"pc/1.16.1","materials":"pc/1.18","language":"pc/1.18","entities":"pc/1.18","protocol":"pc/1.18.2","windows":"pc/1.16.1","version":"pc/1.18.2","foods":"pc/1.17","particles":"pc/1.18","blockLoot":"pc/1.18","entityLoot":"pc/1.18","loginPacket":"pc/1.18.2","tints":"pc/1.17","mapIcons":"pc/1.16","sounds":"pc/1.18","proto":"pc/1.18.2"},"1.19":{"attributes":"pc/1.17","blocks":"pc/1.19","blockCollisionShapes":"pc/1.19","biomes":"pc/1.19","effects":"pc/1.19","items":"pc/1.19","enchantments":"pc/1.19","recipes":"pc/1.19","instruments":"pc/1.19","materials":"pc/1.19","language":"pc/1.19","entities":"pc/1.19","protocol":"pc/1.19","windows":"pc/1.16.1","version":"pc/1.19","foods":"pc/1.19","particles":"pc/1.19","blockLoot":"pc/1.19","entityLoot":"pc/1.19","loginPacket":"pc/1.19","tints":"pc/1.19","mapIcons":"pc/1.16","sounds":"pc/1.19","proto":"pc/1.19"},"1.19.2":{"attributes":"pc/1.17","blocks":"pc/1.19.2","blockCollisionShapes":"pc/1.19.2","biomes":"pc/1.19.2","effects":"pc/1.19.2","items":"pc/1.19.2","enchantments":"pc/1.19.2","recipes":"pc/1.19","instruments":"pc/1.19.2","materials":"pc/1.19.2","language":"pc/1.19.2","entities":"pc/1.19.2","protocol":"pc/1.19.2","windows":"pc/1.16.1","version":"pc/1.19.2","foods":"pc/1.19.2","particles":"pc/1.19.2","blockLoot":"pc/1.19","entityLoot":"pc/1.19","loginPacket":"pc/1.19.2","tints":"pc/1.19.2","mapIcons":"pc/1.16","sounds":"pc/1.19.2","proto":"pc/1.19.2"},"1.19.3":{"attributes":"pc/1.17","blocks":"pc/1.19.3","blockCollisionShapes":"pc/1.19.3","biomes":"pc/1.19.3","effects":"pc/1.19.3","items":"pc/1.19.3","enchantments":"pc/1.19.3","recipes":"pc/1.19.3","instruments":"pc/1.19.3","materials":"pc/1.19.3","language":"pc/1.19.3","entities":"pc/1.19.3","protocol":"pc/1.19.3","windows":"pc/1.16.1","version":"pc/1.19.3","foods":"pc/1.19.3","particles":"pc/1.19.3","blockLoot":"pc/1.19","entityLoot":"pc/1.19","loginPacket":"pc/1.19.2","tints":"pc/1.19.3","mapIcons":"pc/1.16","proto":"pc/1.19.3"},"1.19.4":{"attributes":"pc/1.17","blocks":"pc/1.19.4","blockCollisionShapes":"pc/1.19.4","biomes":"pc/1.19.4","effects":"pc/1.19.4","items":"pc/1.19.4","enchantments":"pc/1.19.4","recipes":"pc/1.19.4","instruments":"pc/1.19.4","materials":"pc/1.19.4","language":"pc/1.19.4","entities":"pc/1.19.4","protocol":"pc/1.19.4","windows":"pc/1.16.1","version":"pc/1.19.4","foods":"pc/1.19.4","particles":"pc/1.19.4","blockLoot":"pc/1.19","entityLoot":"pc/1.19","loginPacket":"pc/1.19.2","tints":"pc/1.19.4","mapIcons":"pc/1.16","sounds":"pc/1.19.2","proto":"pc/1.19.4"},"1.20":{"attributes":"pc/1.17","blocks":"pc/1.20","blockCollisionShapes":"pc/1.20","biomes":"pc/1.20","effects":"pc/1.20","items":"pc/1.20","enchantments":"pc/1.20","recipes":"pc/1.20","instruments":"pc/1.20","materials":"pc/1.20","language":"pc/1.20","entities":"pc/1.20","protocol":"pc/1.20","windows":"pc/1.16.1","version":"pc/1.20","foods":"pc/1.20","particles":"pc/1.20","blockLoot":"pc/1.20","entityLoot":"pc/1.20","loginPacket":"pc/1.20","tints":"pc/1.20","mapIcons":"pc/1.16","sounds":"pc/1.20.1","proto":"pc/1.20"},"1.20.1":{"attributes":"pc/1.17","blocks":"pc/1.20","blockCollisionShapes":"pc/1.20","biomes":"pc/1.20","effects":"pc/1.20","items":"pc/1.20","enchantments":"pc/1.20","recipes":"pc/1.20","instruments":"pc/1.20","materials":"pc/1.20","language":"pc/1.20","entities":"pc/1.20","protocol":"pc/1.20","windows":"pc/1.16.1","version":"pc/1.20.1","foods":"pc/1.20","particles":"pc/1.20","blockLoot":"pc/1.20","entityLoot":"pc/1.20","loginPacket":"pc/1.20","tints":"pc/1.20","mapIcons":"pc/1.16","sounds":"pc/1.20.1"},"1.20.2":{"attributes":"pc/1.17","blocks":"pc/1.20.2","blockCollisionShapes":"pc/1.20.2","biomes":"pc/1.20.2","effects":"pc/1.20.2","items":"pc/1.20.2","enchantments":"pc/1.20.2","recipes":"pc/1.20.2","instruments":"pc/1.20.2","materials":"pc/1.20.2","language":"pc/1.20.2","entities":"pc/1.20.2","protocol":"pc/1.20.2","windows":"pc/1.16.1","version":"pc/1.20.2","foods":"pc/1.20.2","particles":"pc/1.20","blockLoot":"pc/1.20","entityLoot":"pc/1.20","loginPacket":"pc/1.20.2","tints":"pc/1.20.2","mapIcons":"pc/1.20.2","commands":"pc/1.20.2","sounds":"pc/1.20.2","proto":"pc/1.20.2"},"1.20.3":{"attributes":"pc/1.17","blocks":"pc/1.20.3","blockCollisionShapes":"pc/1.20.3","biomes":"pc/1.20.2","effects":"pc/1.20.2","items":"pc/1.20.3","enchantments":"pc/1.20.2","recipes":"pc/1.20.3","instruments":"pc/1.20.2","materials":"pc/1.20.3","language":"pc/1.20.3","entities":"pc/1.20.3","protocol":"pc/1.20.3","windows":"pc/1.16.1","version":"pc/1.20.3","foods":"pc/1.20.3","particles":"pc/1.20.3","blockLoot":"pc/1.20","entityLoot":"pc/1.20","loginPacket":"pc/1.20.2","tints":"pc/1.20.2","mapIcons":"pc/1.20.2","commands":"pc/1.20.3","proto":"pc/latest"},"1.20.4":{"attributes":"pc/1.17","blocks":"pc/1.20.4","blockCollisionShapes":"pc/1.20.3","biomes":"pc/1.20.2","effects":"pc/1.20.2","items":"pc/1.20.3","enchantments":"pc/1.20.2","recipes":"pc/1.20.3","instruments":"pc/1.20.2","materials":"pc/1.20.3","language":"pc/1.20.3","entities":"pc/1.20.3","protocol":"pc/1.20.3","windows":"pc/1.16.1","version":"pc/1.20.4","foods":"pc/1.20.3","particles":"pc/1.20.3","blockLoot":"pc/1.20","entityLoot":"pc/1.20","loginPacket":"pc/1.20.2","tints":"pc/1.20.2","mapIcons":"pc/1.20.2","commands":"pc/1.20.3","sounds":"pc/1.20.4","proto":"pc/latest"},"1.20.5":{"attributes":"pc/1.17","blocks":"pc/1.20.5","blockCollisionShapes":"pc/1.20.5","biomes":"pc/1.20.5","effects":"pc/1.20.5","items":"pc/1.20.5","enchantments":"pc/1.20.5","recipes":"pc/1.20.3","instruments":"pc/1.20.5","materials":"pc/1.20.5","language":"pc/1.20.5","entities":"pc/1.20.5","protocol":"pc/1.20.3","windows":"pc/1.16.1","version":"pc/1.20.4","foods":"pc/1.20.5","particles":"pc/1.20.5","blockLoot":"pc/1.20","entityLoot":"pc/1.20","loginPacket":"pc/1.20.2","tints":"pc/1.20.5","mapIcons":"pc/1.20.2","commands":"pc/1.20.3","sounds":"pc/1.20.4","proto":"pc/latest"}},"bedrock":{"0.14":{"blocks":"bedrock/0.14","biomes":"pc/1.8","items":"bedrock/0.14","protocol":"bedrock/0.14","version":"bedrock/0.14"},"0.15":{"blocks":"bedrock/0.15","biomes":"pc/1.8","items":"bedrock/0.15","protocol":"bedrock/0.15","version":"bedrock/0.15"},"1.0":{"blocks":"bedrock/1.0","biomes":"pc/1.8","items":"bedrock/1.0","version":"bedrock/1.0"},"1.16.201":{"attributes":"bedrock/1.16.201","protocol":"bedrock/1.16.201","steve":"bedrock/1.16.201","proto":"bedrock/1.16.201","types":"bedrock/1.16.201","windows":"bedrock/1.16.201","enchantments":"bedrock/1.16.201","version":"bedrock/1.16.201","language":"bedrock/1.16.201"},"1.16.210":{"attributes":"bedrock/1.16.201","protocol":"bedrock/1.16.210","steve":"bedrock/1.16.201","proto":"bedrock/1.16.210","types":"bedrock/1.16.210","enchantments":"bedrock/1.16.201","version":"bedrock/1.16.210","language":"bedrock/1.16.210"},"1.16.220":{"attributes":"bedrock/1.16.201","blocks":"bedrock/1.16.220","blockStates":"bedrock/1.16.220","biomes":"bedrock/1.17.0","entities":"bedrock/1.18.11","enchantments":"bedrock/1.16.201","steve":"bedrock/1.16.201","protocol":"bedrock/1.16.220","proto":"bedrock/1.16.220","types":"bedrock/1.16.220","version":"bedrock/1.16.220","language":"bedrock/1.16.220"},"1.17.0":{"attributes":"bedrock/1.16.201","blocks":"bedrock/1.17.0","blockStates":"bedrock/1.17.0","blockCollisionShapes":"bedrock/1.17.0","biomes":"bedrock/1.17.0","entities":"bedrock/1.18.11","instruments":"bedrock/1.17.0","materials":"pc/1.17","enchantments":"bedrock/1.16.201","effects":"pc/1.17","protocol":"bedrock/1.17.0","windows":"bedrock/1.16.201","steve":"bedrock/1.16.201","blocksB2J":"bedrock/1.17.0","blocksJ2B":"bedrock/1.17.0","proto":"bedrock/1.17.0","types":"bedrock/1.17.0","version":"bedrock/1.17.0","language":"bedrock/1.17.0"},"1.17.10":{"attributes":"bedrock/1.16.201","blocks":"bedrock/1.17.10","blockStates":"bedrock/1.17.10","blockCollisionShapes":"bedrock/1.17.10","biomes":"bedrock/1.17.0","entities":"bedrock/1.18.11","items":"bedrock/1.17.10","recipes":"bedrock/1.17.10","instruments":"bedrock/1.17.0","materials":"pc/1.17","enchantments":"bedrock/1.16.201","effects":"pc/1.17","protocol":"bedrock/1.17.10","windows":"bedrock/1.16.201","steve":"bedrock/1.16.201","blocksB2J":"bedrock/1.17.10","blocksJ2B":"bedrock/1.17.10","proto":"bedrock/1.17.10","types":"bedrock/1.17.10","version":"bedrock/1.17.10","language":"bedrock/1.17.10"},"1.17.30":{"attributes":"bedrock/1.16.201","blocks":"bedrock/1.17.10","blockStates":"bedrock/1.17.10","blockCollisionShapes":"bedrock/1.17.10","biomes":"bedrock/1.17.0","entities":"bedrock/1.18.11","items":"bedrock/1.17.10","recipes":"bedrock/1.17.10","instruments":"bedrock/1.17.0","materials":"pc/1.17","enchantments":"bedrock/1.16.201","effects":"pc/1.17","protocol":"bedrock/1.17.30","windows":"bedrock/1.16.201","steve":"bedrock/1.16.201","blocksB2J":"bedrock/1.17.10","blocksJ2B":"bedrock/1.17.10","proto":"bedrock/1.17.30","types":"bedrock/1.17.30","version":"bedrock/1.17.30","language":"bedrock/1.17.30"},"1.17.40":{"attributes":"bedrock/1.16.201","blocks":"bedrock/1.17.40","blockStates":"bedrock/1.17.40","blockCollisionShapes":"bedrock/1.17.40","biomes":"bedrock/1.17.0","entities":"bedrock/1.18.11","items":"bedrock/1.17.10","recipes":"bedrock/1.17.10","instruments":"bedrock/1.17.0","materials":"pc/1.17","enchantments":"bedrock/1.16.201","effects":"pc/1.17","protocol":"bedrock/1.17.40","windows":"bedrock/1.16.201","steve":"bedrock/1.16.201","blocksB2J":"bedrock/1.17.10","blocksJ2B":"bedrock/1.17.10","proto":"bedrock/1.17.40","types":"bedrock/1.17.40","version":"bedrock/1.17.40","language":"bedrock/1.17.40"},"1.18.0":{"attributes":"bedrock/1.16.201","blocks":"bedrock/1.17.40","blockStates":"bedrock/1.17.40","blockCollisionShapes":"bedrock/1.17.40","biomes":"bedrock/1.18.0","entities":"bedrock/1.18.11","items":"bedrock/1.18.0","recipes":"bedrock/1.18.0","instruments":"bedrock/1.17.0","materials":"pc/1.17","enchantments":"bedrock/1.16.201","effects":"pc/1.17","protocol":"bedrock/1.18.0","windows":"bedrock/1.16.201","steve":"bedrock/1.16.201","blocksB2J":"bedrock/1.18.0","blocksJ2B":"bedrock/1.18.0","proto":"bedrock/1.18.0","types":"bedrock/1.18.0","version":"bedrock/1.18.0","entityLoot":"bedrock/1.18.0","blockLoot":"bedrock/1.18.0","language":"bedrock/1.18.0"},"1.18.11":{"attributes":"bedrock/1.16.201","blocks":"bedrock/1.18.11","blockStates":"bedrock/1.18.11","blockCollisionShapes":"bedrock/1.18.11","biomes":"bedrock/1.18.0","entities":"bedrock/1.18.11","items":"bedrock/1.18.11","recipes":"bedrock/1.18.11","instruments":"bedrock/1.17.0","materials":"pc/1.17","enchantments":"bedrock/1.16.201","effects":"pc/1.17","protocol":"bedrock/1.18.11","windows":"bedrock/1.16.201","steve":"bedrock/1.16.201","blocksB2J":"bedrock/1.18.11","blocksJ2B":"bedrock/1.18.11","proto":"bedrock/1.18.11","types":"bedrock/1.18.11","version":"bedrock/1.18.11","language":"bedrock/1.18.11"},"1.18.30":{"attributes":"bedrock/1.16.201","blocks":"bedrock/1.18.30","blockStates":"bedrock/1.18.30","blockCollisionShapes":"bedrock/1.18.30","biomes":"bedrock/1.18.0","entities":"bedrock/1.18.11","items":"bedrock/1.18.30","recipes":"bedrock/1.18.30","instruments":"bedrock/1.17.0","materials":"pc/1.17","enchantments":"bedrock/1.16.201","effects":"pc/1.17","protocol":"bedrock/1.18.30","windows":"bedrock/1.16.201","steve":"bedrock/1.16.201","blocksB2J":"bedrock/1.18.30","blocksJ2B":"bedrock/1.18.30","proto":"bedrock/1.18.30","types":"bedrock/1.18.30","version":"bedrock/1.18.30","language":"bedrock/1.18.30"},"1.19.1":{"attributes":"bedrock/1.16.201","blocks":"bedrock/1.19.1","blockStates":"bedrock/1.19.1","blockCollisionShapes":"bedrock/1.19.1","biomes":"bedrock/1.19.1","entities":"bedrock/1.19.1","items":"bedrock/1.19.1","recipes":"bedrock/1.19.1","instruments":"bedrock/1.17.0","materials":"pc/1.17","enchantments":"bedrock/1.19.1","effects":"pc/1.17","protocol":"bedrock/1.19.1","windows":"bedrock/1.16.201","steve":"bedrock/1.16.201","blocksB2J":"bedrock/1.19.1","blocksJ2B":"bedrock/1.19.1","blockMappings":"bedrock/1.19.1","proto":"bedrock/1.19.1","types":"bedrock/1.19.1","version":"bedrock/1.19.1","language":"bedrock/1.19.1"},"1.19.10":{"attributes":"bedrock/1.16.201","blocks":"bedrock/1.19.1","blockStates":"bedrock/1.19.1","blockCollisionShapes":"bedrock/1.19.1","biomes":"bedrock/1.19.1","entities":"bedrock/1.19.1","items":"bedrock/1.19.10","recipes":"bedrock/1.19.10","instruments":"bedrock/1.17.0","materials":"pc/1.17","enchantments":"bedrock/1.19.1","effects":"pc/1.17","protocol":"bedrock/1.19.10","windows":"bedrock/1.16.201","steve":"bedrock/1.16.201","blocksB2J":"bedrock/1.19.1","blocksJ2B":"bedrock/1.19.1","proto":"bedrock/1.19.10","types":"bedrock/1.19.10","version":"bedrock/1.19.10","language":"bedrock/1.19.10"},"1.19.20":{"attributes":"bedrock/1.16.201","blocks":"bedrock/1.19.1","blockStates":"bedrock/1.19.1","blockCollisionShapes":"bedrock/1.19.1","biomes":"bedrock/1.19.1","entities":"bedrock/1.19.1","items":"bedrock/1.19.10","recipes":"bedrock/1.19.10","instruments":"bedrock/1.17.0","materials":"pc/1.17","enchantments":"bedrock/1.19.1","effects":"pc/1.17","protocol":"bedrock/1.19.20","windows":"bedrock/1.16.201","steve":"bedrock/1.16.201","blocksB2J":"bedrock/1.19.1","blocksJ2B":"bedrock/1.19.1","proto":"bedrock/1.19.20","types":"bedrock/1.19.20","version":"bedrock/1.19.20","language":"bedrock/1.19.20"},"1.19.21":{"attributes":"bedrock/1.16.201","blocks":"bedrock/1.19.1","blockStates":"bedrock/1.19.1","blockCollisionShapes":"bedrock/1.19.1","biomes":"bedrock/1.19.1","entities":"bedrock/1.19.1","items":"bedrock/1.19.10","recipes":"bedrock/1.19.10","instruments":"bedrock/1.17.0","materials":"pc/1.17","enchantments":"bedrock/1.19.1","effects":"pc/1.17","protocol":"bedrock/1.19.21","windows":"bedrock/1.16.201","steve":"bedrock/1.16.201","blocksB2J":"bedrock/1.19.1","blocksJ2B":"bedrock/1.19.1","proto":"bedrock/1.19.21","types":"bedrock/1.19.21","version":"bedrock/1.19.21","language":"bedrock/1.19.20"},"1.19.30":{"attributes":"bedrock/1.16.201","blocks":"bedrock/1.19.1","blockStates":"bedrock/1.19.1","blockCollisionShapes":"bedrock/1.19.1","biomes":"bedrock/1.19.1","entities":"bedrock/1.19.1","items":"bedrock/1.19.10","recipes":"bedrock/1.19.10","instruments":"bedrock/1.17.0","materials":"pc/1.17","enchantments":"bedrock/1.19.1","effects":"pc/1.17","protocol":"bedrock/1.19.30","windows":"bedrock/1.16.201","steve":"bedrock/1.16.201","blocksB2J":"bedrock/1.19.1","blocksJ2B":"bedrock/1.19.1","proto":"bedrock/1.19.30","types":"bedrock/1.19.30","version":"bedrock/1.19.30","language":"bedrock/1.19.30"},"1.19.40":{"attributes":"bedrock/1.16.201","blocks":"bedrock/1.19.1","blockStates":"bedrock/1.19.1","blockCollisionShapes":"bedrock/1.19.1","biomes":"bedrock/1.19.1","entities":"bedrock/1.19.1","items":"bedrock/1.19.10","recipes":"bedrock/1.19.10","instruments":"bedrock/1.17.0","materials":"pc/1.17","enchantments":"bedrock/1.19.1","effects":"pc/1.17","protocol":"bedrock/1.19.40","windows":"bedrock/1.16.201","steve":"bedrock/1.16.201","blocksB2J":"bedrock/1.19.1","blocksJ2B":"bedrock/1.19.1","proto":"bedrock/1.19.40","types":"bedrock/1.19.40","version":"bedrock/1.19.40","language":"bedrock/1.19.40"},"1.19.50":{"attributes":"bedrock/1.16.201","blocks":"bedrock/1.19.1","blockStates":"bedrock/1.19.1","blockCollisionShapes":"bedrock/1.19.1","biomes":"bedrock/1.19.1","entities":"bedrock/1.19.1","items":"bedrock/1.19.10","recipes":"bedrock/1.19.10","instruments":"bedrock/1.17.0","materials":"pc/1.17","enchantments":"bedrock/1.19.1","effects":"pc/1.17","protocol":"bedrock/1.19.50","windows":"bedrock/1.16.201","steve":"bedrock/1.16.201","blocksB2J":"bedrock/1.19.1","blocksJ2B":"bedrock/1.19.1","proto":"bedrock/1.19.50","types":"bedrock/1.19.50","version":"bedrock/1.19.50","language":"bedrock/1.19.50"},"1.19.60":{"attributes":"bedrock/1.16.201","blocks":"bedrock/1.19.1","blockStates":"bedrock/1.19.1","blockCollisionShapes":"bedrock/1.19.1","biomes":"bedrock/1.19.1","entities":"bedrock/1.19.1","items":"bedrock/1.19.10","recipes":"bedrock/1.19.10","instruments":"bedrock/1.17.0","materials":"pc/1.17","enchantments":"bedrock/1.19.1","effects":"pc/1.17","protocol":"bedrock/1.19.60","windows":"bedrock/1.16.201","steve":"bedrock/1.16.201","blocksB2J":"bedrock/1.19.1","blocksJ2B":"bedrock/1.19.1","proto":"bedrock/1.19.60","types":"bedrock/1.19.60","version":"bedrock/1.19.60","language":"bedrock/1.19.60"},"1.19.62":{"attributes":"bedrock/1.16.201","blocks":"bedrock/1.19.1","blockStates":"bedrock/1.19.1","blockCollisionShapes":"bedrock/1.19.1","biomes":"bedrock/1.19.1","entities":"bedrock/1.19.1","items":"bedrock/1.19.10","recipes":"bedrock/1.19.10","instruments":"bedrock/1.17.0","materials":"pc/1.17","enchantments":"bedrock/1.19.1","effects":"pc/1.17","protocol":"bedrock/1.19.62","windows":"bedrock/1.16.201","steve":"bedrock/1.16.201","blocksB2J":"bedrock/1.19.1","blocksJ2B":"bedrock/1.19.1","proto":"bedrock/1.19.62","types":"bedrock/1.19.62","version":"bedrock/1.19.62","language":"bedrock/1.19.60"},"1.19.63":{"attributes":"bedrock/1.16.201","blocks":"bedrock/1.19.1","blockStates":"bedrock/1.19.1","blockCollisionShapes":"bedrock/1.19.1","biomes":"bedrock/1.19.1","entities":"bedrock/1.19.1","items":"bedrock/1.19.10","recipes":"bedrock/1.19.10","instruments":"bedrock/1.17.0","materials":"pc/1.17","enchantments":"bedrock/1.19.1","effects":"pc/1.17","protocol":"bedrock/1.19.62","windows":"bedrock/1.16.201","steve":"bedrock/1.16.201","blocksB2J":"bedrock/1.19.1","blocksJ2B":"bedrock/1.19.1","proto":"bedrock/1.19.62","types":"bedrock/1.19.62","version":"bedrock/1.19.63","language":"bedrock/1.19.60"},"1.19.70":{"blocks":"bedrock/1.19.1","blockStates":"bedrock/1.19.1","blockCollisionShapes":"bedrock/1.19.1","biomes":"bedrock/1.19.1","entities":"bedrock/1.19.1","items":"bedrock/1.19.10","recipes":"bedrock/1.19.10","instruments":"bedrock/1.17.0","materials":"pc/1.17","enchantments":"bedrock/1.19.1","effects":"pc/1.17","protocol":"bedrock/1.19.70","windows":"bedrock/1.16.201","steve":"bedrock/1.16.201","blocksB2J":"bedrock/1.19.1","blocksJ2B":"bedrock/1.19.1","proto":"bedrock/1.19.70","types":"bedrock/1.19.70","version":"bedrock/1.19.70","language":"bedrock/1.19.70"},"1.19.80":{"blocks":"bedrock/1.19.80","blockStates":"bedrock/1.19.80","blockCollisionShapes":"bedrock/1.19.1","biomes":"bedrock/1.19.1","entities":"bedrock/1.19.1","items":"bedrock/1.19.10","recipes":"bedrock/1.19.10","instruments":"bedrock/1.17.0","materials":"pc/1.17","enchantments":"bedrock/1.19.1","effects":"pc/1.17","protocol":"bedrock/1.19.80","windows":"bedrock/1.16.201","steve":"bedrock/1.16.201","blocksB2J":"bedrock/1.19.1","blocksJ2B":"bedrock/1.19.1","proto":"bedrock/1.19.80","types":"bedrock/1.19.80","version":"bedrock/1.19.80","language":"bedrock/1.19.80"},"1.20.0":{"blocks":"bedrock/1.20.0","blockStates":"bedrock/1.20.0","blockCollisionShapes":"bedrock/1.20.0","biomes":"bedrock/1.20.0","entities":"bedrock/1.19.1","items":"bedrock/1.20.0","recipes":"bedrock/1.19.10","instruments":"bedrock/1.17.0","materials":"pc/1.17","enchantments":"bedrock/1.19.1","effects":"pc/1.17","protocol":"bedrock/1.20.0","windows":"bedrock/1.16.201","steve":"bedrock/1.16.201","blocksB2J":"bedrock/1.20.0","blocksJ2B":"bedrock/1.20.0","proto":"bedrock/1.20.0","types":"bedrock/1.20.0","version":"bedrock/1.20.0","language":"bedrock/1.20.0"},"1.20.10":{"blocks":"bedrock/1.20.10","blockStates":"bedrock/1.20.10","blockCollisionShapes":"bedrock/1.20.0","biomes":"bedrock/1.20.0","entities":"bedrock/1.19.1","items":"bedrock/1.20.0","recipes":"bedrock/1.19.10","instruments":"bedrock/1.17.0","materials":"pc/1.17","enchantments":"bedrock/1.19.1","effects":"pc/1.17","protocol":"bedrock/1.20.10","windows":"bedrock/1.16.201","steve":"bedrock/1.16.201","blocksB2J":"bedrock/1.20.0","blocksJ2B":"bedrock/1.20.0","proto":"bedrock/1.20.10","types":"bedrock/1.20.10","version":"bedrock/1.20.10","language":"bedrock/1.20.10"},"1.20.15":{"blocks":"bedrock/1.20.10","blockStates":"bedrock/1.20.10","blockCollisionShapes":"bedrock/1.20.0","biomes":"bedrock/1.20.0","entities":"bedrock/1.19.1","items":"bedrock/1.20.0","recipes":"bedrock/1.19.10","instruments":"bedrock/1.17.0","materials":"pc/1.17","enchantments":"bedrock/1.19.1","effects":"pc/1.17","protocol":"bedrock/1.20.10","windows":"bedrock/1.16.201","steve":"bedrock/1.16.201","blocksB2J":"bedrock/1.20.0","blocksJ2B":"bedrock/1.20.0","proto":"bedrock/1.20.10","types":"bedrock/1.20.10","version":"bedrock/1.20.15","language":"bedrock/1.20.10"},"1.20.30":{"blocks":"bedrock/1.20.30","blockStates":"bedrock/1.20.30","blockCollisionShapes":"bedrock/1.20.0","biomes":"bedrock/1.20.0","entities":"bedrock/1.19.1","items":"bedrock/1.20.0","recipes":"bedrock/1.19.10","instruments":"bedrock/1.17.0","materials":"pc/1.17","enchantments":"bedrock/1.19.1","effects":"pc/1.17","protocol":"bedrock/1.20.30","windows":"bedrock/1.16.201","steve":"bedrock/1.16.201","blocksB2J":"bedrock/1.20.0","blocksJ2B":"bedrock/1.20.0","proto":"bedrock/1.20.30","types":"bedrock/1.20.30","version":"bedrock/1.20.30","language":"bedrock/1.20.10"},"1.20.40":{"blocks":"bedrock/1.20.40","blockStates":"bedrock/1.20.40","blockCollisionShapes":"bedrock/1.20.0","biomes":"bedrock/1.20.0","entities":"bedrock/1.19.1","items":"bedrock/1.20.0","recipes":"bedrock/1.19.10","instruments":"bedrock/1.17.0","materials":"pc/1.17","enchantments":"bedrock/1.19.1","effects":"pc/1.17","protocol":"bedrock/1.20.40","windows":"bedrock/1.16.201","steve":"bedrock/1.16.201","blocksB2J":"bedrock/1.20.0","blocksJ2B":"bedrock/1.20.0","proto":"bedrock/1.20.40","types":"bedrock/1.20.40","version":"bedrock/1.20.40","language":"bedrock/1.20.10"},"1.20.50":{"blocks":"bedrock/1.20.50","blockStates":"bedrock/1.20.50","blockCollisionShapes":"bedrock/1.20.50","biomes":"bedrock/1.20.0","entities":"bedrock/1.19.1","items":"bedrock/1.20.0","recipes":"bedrock/1.19.10","instruments":"bedrock/1.17.0","materials":"pc/1.17","enchantments":"bedrock/1.19.1","effects":"pc/1.17","protocol":"bedrock/1.20.50","windows":"bedrock/1.16.201","steve":"bedrock/1.16.201","blocksB2J":"bedrock/1.20.50","blocksJ2B":"bedrock/1.20.50","proto":"bedrock/1.20.50","types":"bedrock/1.20.50","version":"bedrock/1.20.50","language":"bedrock/1.20.10"},"1.20.61":{"blocks":"bedrock/1.20.61","blockStates":"bedrock/1.20.61","blockCollisionShapes":"bedrock/1.20.61","biomes":"bedrock/1.20.0","entities":"bedrock/1.19.1","items":"bedrock/1.20.0","recipes":"bedrock/1.19.10","instruments":"bedrock/1.17.0","materials":"pc/1.17","enchantments":"bedrock/1.19.1","effects":"pc/1.17","protocol":"bedrock/1.20.61","windows":"bedrock/1.16.201","steve":"bedrock/1.16.201","blocksB2J":"bedrock/1.20.61","blocksJ2B":"bedrock/1.20.61","proto":"bedrock/1.20.61","types":"bedrock/1.20.61","version":"bedrock/1.20.61","language":"bedrock/1.20.10"},"1.20.71":{"blocks":"bedrock/1.20.71","blockStates":"bedrock/1.20.71","blockCollisionShapes":"bedrock/1.20.71","biomes":"bedrock/1.20.0","entities":"bedrock/1.19.1","items":"bedrock/1.20.0","recipes":"bedrock/1.19.10","instruments":"bedrock/1.17.0","materials":"pc/1.17","enchantments":"bedrock/1.19.1","effects":"pc/1.17","protocol":"bedrock/1.20.71","windows":"bedrock/1.16.201","steve":"bedrock/1.16.201","blocksB2J":"bedrock/1.20.71","blocksJ2B":"bedrock/1.20.71","proto":"bedrock/1.20.71","types":"bedrock/1.20.71","version":"bedrock/1.20.71","language":"bedrock/1.20.10"},"1.20.80":{"blocks":"bedrock/1.20.71","blockStates":"bedrock/1.20.71","blockCollisionShapes":"bedrock/1.20.71","biomes":"bedrock/1.20.0","entities":"bedrock/1.19.1","items":"bedrock/1.20.0","recipes":"bedrock/1.19.10","instruments":"bedrock/1.17.0","materials":"pc/1.17","enchantments":"bedrock/1.19.1","effects":"pc/1.17","protocol":"bedrock/1.20.80","windows":"bedrock/1.16.201","steve":"bedrock/1.20.80","blocksB2J":"bedrock/1.20.71","blocksJ2B":"bedrock/1.20.71","proto":"bedrock/1.20.80","types":"bedrock/1.20.80","version":"bedrock/1.20.80","language":"bedrock/1.20.10"},"1.21.0":{"blocks":"bedrock/1.21.0","blockStates":"bedrock/1.21.0","blockCollisionShapes":"bedrock/1.21.0","biomes":"bedrock/1.20.0","entities":"bedrock/1.21.0","items":"bedrock/1.21.0","recipes":"bedrock/1.19.10","instruments":"bedrock/1.17.0","materials":"pc/1.17","enchantments":"bedrock/1.19.1","effects":"pc/1.17","protocol":"bedrock/1.21.0","windows":"bedrock/1.16.201","steve":"bedrock/1.20.80","blocksB2J":"bedrock/1.21.0","blocksJ2B":"bedrock/1.21.0","proto":"bedrock/1.21.0","types":"bedrock/1.21.0","version":"bedrock/1.21.0","language":"bedrock/1.20.10"},"1.21.2":{"blocks":"bedrock/1.21.0","blockStates":"bedrock/1.21.0","blockCollisionShapes":"bedrock/1.21.0","biomes":"bedrock/1.20.0","entities":"bedrock/1.21.0","items":"bedrock/1.21.0","recipes":"bedrock/1.19.10","instruments":"bedrock/1.17.0","materials":"pc/1.17","enchantments":"bedrock/1.19.1","effects":"pc/1.17","protocol":"bedrock/1.21.2","windows":"bedrock/1.16.201","steve":"bedrock/1.20.80","blocksB2J":"bedrock/1.21.0","blocksJ2B":"bedrock/1.21.0","proto":"bedrock/latest","types":"bedrock/latest","version":"bedrock/1.21.2","language":"bedrock/1.20.10"},"1.21.20":{"blocks":"bedrock/1.21.0","blockStates":"bedrock/1.21.0","blockCollisionShapes":"bedrock/1.21.0","biomes":"bedrock/1.20.0","entities":"bedrock/1.21.0","items":"bedrock/1.21.0","recipes":"bedrock/1.19.10","instruments":"bedrock/1.17.0","materials":"pc/1.17","enchantments":"bedrock/1.19.1","effects":"pc/1.17","protocol":"bedrock/1.21.20","windows":"bedrock/1.16.201","steve":"bedrock/1.20.80","blocksB2J":"bedrock/1.21.0","blocksJ2B":"bedrock/1.21.0","proto":"bedrock/latest","types":"bedrock/latest","version":"bedrock/1.21.20","language":"bedrock/1.20.10"}}}');
+
+/***/ }),
+
 /***/ 5775:
 /***/ ((module) => {
 
@@ -94037,6 +95642,14 @@ module.exports = /*#__PURE__*/JSON.parse('{"void":"native","container":"native",
 
 /***/ }),
 
+/***/ 7873:
+/***/ ((module) => {
+
+"use strict";
+module.exports = /*#__PURE__*/JSON.parse('[{"name":"independentLiquidGravity","description":"Liquid gravity is a constant","versions":["1.8","1.9","1.10","1.11","1.12"]},{"name":"proportionalLiquidGravity","description":"Liquid gravity is a proportion of normal gravity","versions":["1.13","1.14","1.15","1.16","1.17","1.18","1.19","1.20"]},{"name":"velocityBlocksOnCollision","description":"Velocity changes are caused by blocks are triggered by collision with the block","versions":["1.8","1.9","1.10","1.11","1.12","1.13","1.14"]},{"name":"velocityBlocksOnTop","description":"Velocity changes are caused by the block the player is standing on","versions":["1.15","1.17","1.18"]},{"name":"climbUsingJump","description":"Entity can climb ladders and vines by pressing jump","versions":["1.14","1.15","1.17","1.18"]}]');
+
+/***/ }),
+
 /***/ 3937:
 /***/ ((module) => {
 
@@ -94224,8 +95837,70 @@ window.mcProtocol = {}
 process.versions = {node:"Infinity.Infinity.Infinity"}
 window.mcProtocol.ping = __webpack_require__(2208)
 window.mcProtocol.conv = __webpack_require__(3980)
+const { Physics, PlayerState } = __webpack_require__(8745)
+window.mcProtocol.Physics = Physics
+window.mcProtocol.PlayerState = PlayerState
+window.mcProtocol.getBlock = __webpack_require__(457)
+window.mcProtocol.getMCData = __webpack_require__(915)
+window.mcProtocol.parseMetadata = function(metadata, entityMetadata = {}) {
+  if (metadata !== undefined) {
+    for (const { key, value } of metadata) {
+      entityMetadata[key] = value
+    }
+  }
+  return entityMetadata
+}
+window.mcProtocol.updateAttributes = (packet, attributes) => {
+	if (!attributes) attributes = {}
+	for (const prop of packet.properties) {
+		attributes[prop.key] = {
+			value: prop.value,
+			modifiers: prop.modifiers
+		}
+	}
+}
 
-//from minecraft-protocol/src/createClient.js
+//!from https://github.com/PrismarineJS/prismarine-chunk/blob/master/src/pc/1.8/chunk.js
+const sectionCount = 16
+function parseBitMap (bitMap) {
+  const chunkIncluded = new Array(sectionCount)
+  let chunkCount = 0
+  for (let y = 0; y < sectionCount; ++y) {
+    chunkIncluded[y] = bitMap & (1 << y)
+    if (chunkIncluded[y]) chunkCount++
+  }
+  return { chunkIncluded, chunkCount }
+}
+window.mcProtocol.load_1_8 = function (data, bitMap = 0xFFFF, skyLightSent = true, fullChunk = true, cb) {
+	const { chunkIncluded, chunkCount } = parseBitMap(bitMap)
+	let offset = 0
+	let offsetLight = 16 * 16 * sectionCount * chunkCount * 2
+	let offsetSkyLight = (this.skyLightSent) ? 16 * 16 * sectionCount * chunkCount / 2 * 5 : 0
+	for (let i = 0; i < sectionCount; i++) {
+		if (chunkIncluded[i]) {
+			cb(i, data.subarray(offset, offset + w * l * sh * 2), data.subarray(offsetLight, offsetLight + w * l * sh / 2), this.skyLightSent && data.subarray(offsetSkyLight, offsetSkyLight + w * l * sh / 2))
+			offset += w * l * sh * 2
+			offsetLight += w * l * sh / 2
+			if (this.skyLightSent) offsetSkyLight += w * l * sh / 2
+		}
+	}
+	if (fullChunk) {
+		data.copy(this.biome, 0, w * l * sectionCount * chunkCount * (skyLightSent ? 3 : 5 / 2))
+	}
+
+	const expectedSize = SECTION_SIZE * chunkCount + (fullChunk ? w * l : 0)
+	if (data.length !== expectedSize) { throw (new Error(`Data buffer not correct size (was ${data.length}, expected ${expectedSize})`)) }
+}
+window.mcProtocol.onesInShort = function (n) {
+  n = n & 0xffff
+  let count = 0
+  for (let i = 0; i < 16; ++i) {
+    count = ((1 << i) & n) ? count + 1 : count
+  }
+  return count
+}
+
+//!from minecraft-protocol/src/createClient.js
 let DefaultClientImpl = __webpack_require__(23)
 const assert = __webpack_require__(4529)
 

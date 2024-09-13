@@ -2,7 +2,7 @@ const dataVersion = require("./package.json").version
 let data = window.mcProtocol.data = {}
 let paths
 window.mcProtocol.dataPrefetch = async function(pcOrBedrock, version, progCb){
-	if(!paths) paths = await (await fetch("https://unpkg.com/minecraft-data@"+dataVersion+"/minecraft-data/data/dataPaths.json")).json()
+	if(!paths) paths = require("minecraft-data/minecraft-data/data/dataPaths.json") //await (await fetch("https://unpkg.com/minecraft-data@"+dataVersion+"/minecraft-data/data/dataPaths.json")).json()
 	if(!data[pcOrBedrock]) data[pcOrBedrock] = {}
 	let o = data[pcOrBedrock][version/*.replace("_eag", "")*/] = {}
 	let thesePaths = paths[pcOrBedrock][version/*.replace("_eag", "")*/]

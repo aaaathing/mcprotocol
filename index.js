@@ -4,6 +4,12 @@ window.mcProtocol = {}
 process.versions = {node:"Infinity.Infinity.Infinity"}
 window.mcProtocol.ping = require("minecraft-protocol/src/ping.js")
 window.mcProtocol.conv = require("mineflayer/lib/conversions.js")
+const { Physics, PlayerState } = require('prismarine-physics')
+window.mcProtocol.Physics = Physics
+window.mcProtocol.PlayerState = PlayerState
+window.mcProtocol.getBlock = require('prismarine-block')
+window.mcProtocol.getMCData = require('minecraft-data')
+window.mcProtocol.Vec3 = require('vec3').Vec3
 window.mcProtocol.parseMetadata = function(metadata, entityMetadata = {}) {
   if (metadata !== undefined) {
     for (const { key, value } of metadata) {
