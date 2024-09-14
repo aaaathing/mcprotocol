@@ -55,11 +55,11 @@ window.mcProtocol.load_1_8 = function (data, bitMap = 0xFFFF, skyLightSent = tru
 		}
 	}
 	let o={}
-	if (fullChunk) {
+	if (fullChunk && chunkCount) {
 		o.biomes = data.subarray(w * l * sectionCount * chunkCount * (skyLightSent ? 3 : 5 / 2))
 	}
 
-	const expectedSize = SECTION_SIZE * chunkCount + (fullChunk ? w * l : 0)
+	const expectedSize = SECTION_SIZE * chunkCount + (fullChunk && chunkCount ? w * l : 0)
 	if (data.length !== expectedSize) { throw (new Error(`Data buffer not correct size (was ${data.length}, expected ${expectedSize})`)) }
 	return o
 }
