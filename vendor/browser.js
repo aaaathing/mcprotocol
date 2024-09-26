@@ -264,7 +264,7 @@ Socket.prototype.connect = function(options, cb) {
 		return;
 	}
 
-	this._ws = new WebSocket("wss://"+options.host+":"+options.port);
+	this._ws = new WebSocket((options.port === 443 ? "wss://" : "ws://")+options.host+":"+options.port);
 	this._handleWebsocket();
 
 	if (cb) {

@@ -1,10 +1,9 @@
-<script src="dist/mcProtocol.js"></script>
+<script src="dist/bundle.js"></script>
 <script>
 	if(1)(async function(){
 		await mcProtocol.dataPrefetch("pc","1.8", console.log)
 		window.c = mcProtocol.createClient({
-			host:"eagler.noBnoT.org",//sus.shhnowisnottheti.me
-			port:"443",
+			url:"wss://eagler.noBnoT.org",//sus.shhnowisnottheti.me
 			username:"test9999",
 			version:"1.8",
 		})

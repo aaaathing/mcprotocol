@@ -45,7 +45,7 @@ window.mcProtocol.load_1_8 = function (data, bitMap = 0xFFFF, skyLightSent = tru
 	const { chunkIncluded, chunkCount } = parseBitMap(bitMap)
 	let offset = 0
 	let offsetLight = w * l * sectionCount * chunkCount * 2
-	let offsetSkyLight = skyLightSent ? 16 * 16 * sectionCount * chunkCount / 2 * 5 : 0
+	let offsetSkyLight = skyLightSent ? w * l * sectionCount * chunkCount / 2 * 5 : 0
 	for (let i = 0; i < sectionCount; i++) {
 		if (chunkIncluded[i]) {
 			cb(i, new Uint16Array(Uint8Array.prototype.slice.apply(data, [offset, offset + w * l * sh * 2]).buffer), data.subarray(offsetLight, offsetLight + w * l * sh / 2), skyLightSent && data.subarray(offsetSkyLight, offsetSkyLight + w * l * sh / 2))
@@ -93,6 +93,12 @@ function createClient (options) {
   assert.ok(options, 'options is required')
   assert.ok(options.username, 'username is required')
   if (!options.version && !options.realms) { options.version = false }
+
+	if(options.url && !options.host){
+		let url = new URL(options.url)
+		options.host = url.hostname
+		options.port = url.port || (url.protocol === "wss:" ? 443 : (url.protocol === "ws:" ? 80 : undefined))
+	}
   
   // TODO: avoid setting default version if autoVersion is enabled
   const optVersion = options.version || require('minecraft-protocol/src/version').defaultVersion
@@ -130,8 +136,8 @@ function createClient (options) {
         legacyProtocolVersion:2,
 				clientProtovolVersionEag: [2,3],
 				clientProtovolVersion: [options.protocolVersion], //47
-				clientBrand: "EaglercraftX",
-				clientVersion: "u35",
+				clientBrand: "",
+				clientVersion: "",
 				clientAuth: false,
 				clientAuthUsername: options.username,
       })
