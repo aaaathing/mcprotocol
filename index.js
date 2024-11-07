@@ -136,7 +136,7 @@ function createClient (options) {
         legacyProtocolVersion:2,
 				clientProtovolVersionEag: [2,3],
 				clientProtovolVersion: [options.protocolVersion], //47
-				clientBrand: "",
+				clientBrand: "MKTM",
 				clientVersion: "",
 				clientAuth: false,
 				clientAuthUsername: options.username,

@@ -13,7 +13,7 @@ window.mcProtocol.dataPrefetch = async function(pcOrBedrock, version, progCb){
 		if(i === "proto"){
 			//o[i] = await (await fetch("https://unpkg.com/minecraft-data@"+dataVersion+"/minecraft-data/data/"+thesePaths[i]+"/"+i+".yml")).text()
 		}else{
-			o[i] = await (await fetch("https://unpkg.com/minecraft-data@"+dataVersion+"/minecraft-data/data/"+thesePaths[i]+"/"+i+".json")).json()
+			o[i] = await (await fetch("https://rawcdn.githack.com/PrismarineJS/minecraft-data/"+dataVersion+"/data/"+thesePaths[i]+"/"+i+".json")).json()
 		}
 		prog++
 		progCb(prog,total)
